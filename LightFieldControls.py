@@ -76,6 +76,7 @@ class LightField:
     def set_exposure_time(self, time):
         if self.camera_found():  
             self.set_value(CameraSettings.ShutterTimingExposureTime, time) 
+            print("The exposure time has been set to " + str(self.get_exposure_time()))
             
     def get_exposure_time(self):
         if self.camera_found():  
@@ -84,7 +85,8 @@ class LightField:
     def set_center_wavelength(self, wavelength):
         if self.spectrometer_found(): 
             self.set_value(SpectrometerSettings.GratingCenterWavelength, wavelength)
-    
+            print("The center wavelength has been set to " + str(self.get_center_wavelength()))
+            
     def get_center_wavelength(self):
         if self.spectrometer_found(): 
             return self.get_value(SpectrometerSettings.GratingCenterWavelength)
@@ -92,7 +94,8 @@ class LightField:
     def set_grating(self, grating):
         if self.spectrometer_found(): 
            self.set_value(SpectrometerSettings.GratingSelected, grating)
-    
+           print("The grating has been set to " + str(self.get_grating()))
+           
     def get_grating(self):
         if self.spectrometer_found(): 
            return self.get_value(SpectrometerSettings.GratingSelected)
@@ -167,9 +170,11 @@ class LightField:
                 f.write(",") # First column (column under "wavelength:") is blank)
                 f.write(','.join(map(str, row)))
                 f.write('\n')
-
+        
+        print("Image saved as " + filename + ".csv")
 
     # Exit/close LightField 
     def close(self):
         self.lf.Dispose() 
+        print("LightField has been closed.")
 

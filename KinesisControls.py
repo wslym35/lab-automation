@@ -1,110 +1,143 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Feb 19 11:08:39 2026
+Created on Fri Feb 20 14:58:18 2026
 
-@author: Wesley Mills 
+@author: Wesley Mills
+
+Sources: https://github.com/Thorlabs/Motion_Control_Examples/tree/main/Python/Kinesis/Integrated%20Stages/Cage%20Rotator
+        and ChatGPT 
 """
 
 import clr
-import sys
 import time
-import os
+import sys
+from System import Decimal
+
+# === Load Thorlabs DLLs ===
+KINESIS_PATH = r"C:\Program Files\Thorlabs\Kinesis"
+sys.path.append(KINESIS_PATH)
+
+clr.AddReference(KINESIS_PATH + r"\Thorlabs.MotionControl.DeviceManagerCLI.dll")
+clr.AddReference(KINESIS_PATH + r"\Thorlabs.MotionControl.GenericMotorCLI.dll")
+clr.AddReference(KINESIS_PATH + r"\Thorlabs.MotionControl.IntegratedStepperMotorsCLI.dll")
+
+from Thorlabs.MotionControl.DeviceManagerCLI import (DeviceManagerCLI, DeviceConfiguration) 
+from Thorlabs.MotionControl.GenericMotorCLI import MotorDirection
+#from Thorlabs.MotionControl.DeviceManagerCLI import DeviceManagerCLI
+from Thorlabs.MotionControl.IntegratedStepperMotorsCLI import CageRotator
+
+# =============================================================================
+# # Import functions from dlls. 
+# # Works as of 15:40 
+# from Thorlabs.MotionControl.DeviceManagerCLI import *
+# from Thorlabs.MotionControl.GenericMotorCLI import *
+# from Thorlabs.MotionControl.GenericMotorCLI import MotorDirection
+# from Thorlabs.MotionControl.IntegratedStepperMotorsCLI import *
+# from System import Decimal 
+# =============================================================================
 
 class K10CR2:
-    def __init__(self, serial_number, polling_rate=250, kinesis_path=r"C:\Program Files\Thorlabs\Kinesis"):
+    """
+    Automation wrapper for Thorlabs K10CR2 Cage Rotator
+    """
+
+    def __init__(self, serial_number, polling_interval=250):
         self.serial = str(serial_number)
-        self.polling_rate = polling_rate
-        self.kinesis_path = kinesis_path
+        self.polling_interval = polling_interval
         self.device = None
+        self._connected = False
 
-        # Add DLL directory for Windows
-        if os.path.isdir(self.kinesis_path):
-            os.add_dll_directory(self.kinesis_path)
-        else:
-            raise FileNotFoundError(f"Kinesis path not found: {self.kinesis_path}")
+    # -------------------------
+    # Connection Handling
+    # -------------------------
 
-        # Load required DLLs
-        clr.AddReference(os.path.join(self.kinesis_path, "Thorlabs.MotionControl.DeviceManagerCLI.dll"))
-        clr.AddReference(os.path.join(self.kinesis_path, "Thorlabs.MotionControl.IntegratedStepperMotorsCLI.dll"))
+    def connect(self):
+        DeviceManagerCLI.BuildDeviceList()
 
-        from Thorlabs.MotionControl.DeviceManagerCLI import DeviceManagerCLI
-        from Thorlabs.MotionControl.IntegratedStepperMotorsCLI import IntegratedStepperMotor
+        self.device = CageRotator.CreateCageRotator(self.serial)
+        self.device.Connect(self.serial)
 
-        self.DeviceManagerCLI = DeviceManagerCLI
-        self.IntegratedStepperMotor = IntegratedStepperMotor
+        if not self.device.IsSettingsInitialized():
+            self.device.WaitForSettingsInitialized(10000)
 
-    # ----------------------------
-    # Connection / Initialization
-    # ----------------------------
-    def connect(self, wait_for_settings=True, timeout=5000):
-        DM = self.DeviceManagerCLI
-
-        # Build device list
-        DM.BuildDeviceList()
+        self.device.StartPolling(self.polling_interval)
         time.sleep(0.5)
 
-        # Instantiate device
-        self.device = self.IntegratedStepperMotor()
-
-        # Low-level connection
-        self.device.CreateConnectionToDevice(self.serial)
-        time.sleep(0.5)
-
-        # Optional: Wait for settings initialized (safe)
-        if wait_for_settings:
-            try:
-                self.device.WaitForSettingsInitialized(timeout)
-            except Exception:
-                # Older K10CR2 firmware may not support this; ignore safely
-                pass
-
-        # Enable and start polling
         self.device.EnableDevice()
-        self.device.StartPolling(self.polling_rate)
-        time.sleep(0.5)
+        time.sleep(1)
 
-        print(f"K10CR2 ({self.serial}) connected and polling.")
+        self.device.LoadMotorConfiguration(
+            self.serial,
+            DeviceConfiguration.DeviceSettingsUseOptionType.UseDeviceSettings
+        )
+
+        self._connected = True
+        print(f"K10CR2 {self.serial} connected.")
 
     def disconnect(self):
-        if self.device:
+        if self.device is not None:
             self.device.StopPolling()
             self.device.Disconnect()
-            print("K10CR2 disconnected.")
+            self._connected = False
+            print(f"K10CR2 {self.serial} disconnected.")
 
-    # ----------------------------
-    # Motion
-    # ----------------------------
+    # -------------------------
+    # Motion Commands
+    # -------------------------
+
     def home(self, timeout=60000):
-        if self.device.get_NeedsHoming():
-            print("Homing...")
-            self.device.Home(timeout)
-            self._wait_for_motion()
-            print("Homing complete.")
-        else:
-            print("Already homed.")
+        self._ensure_connected()
+        print("Homing...")
+        self.device.Home(timeout)
+        print("Home complete.")
 
-    def move_absolute(self, angle_deg, timeout=60000):
-        print(f"Moving to {angle_deg}°")
-        self.device.MoveTo(angle_deg, timeout)
-        self._wait_for_motion()
+    def move_to(self, angle_deg, timeout=60000):
+        self._ensure_connected()
+        print(f"Moving to {angle_deg} degrees...")
+        self.device.MoveTo(Decimal(angle_deg), timeout)
         print("Move complete.")
 
     def move_relative(self, delta_deg, timeout=60000):
-        print(f"Moving by {delta_deg}°")
-        self.device.MoveRelative(delta_deg, timeout)
-        self._wait_for_motion()
+        self._ensure_connected()
+        print(f"Moving relative {delta_deg} degrees...")
+        self.device.MoveRelative(MotorDirection.Forward, Decimal(delta_deg), timeout)
         print("Move complete.")
 
+    def move_continuous(self, direction="forward"):
+        self._ensure_connected()
+        dir_enum = MotorDirection.Forward if direction.lower() == "forward" else MotorDirection.Backward
+        self.device.MoveContinuous(dir_enum)
+
     def stop(self):
+        self._ensure_connected()
         self.device.StopImmediate()
-        print("Motion stopped.")
+
+    # -------------------------
+    # Status
+    # -------------------------
 
     def get_position(self):
-        return self.device.get_Position()
+        self._ensure_connected()
+        return float(str(self.device.Position)) 
 
-    # ----------------------------
-    # Internal wait for motion
-    # ----------------------------
-    def _wait_for_motion(self, poll_interval=0.1):
-        while self.device.get_IsDeviceBusy():
-            time.sleep(poll_interval)
+    def is_connected(self):
+        return self._connected
+
+    # -------------------------
+    # Internal Safety
+    # -------------------------
+
+    def _ensure_connected(self):
+        if not self._connected:
+            raise RuntimeError("Device not connected. Call connect() first.")
+
+    # -------------------------
+    # Context Manager Support
+    # -------------------------
+
+    def __enter__(self):
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.disconnect()
