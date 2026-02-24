@@ -2,7 +2,7 @@
 """
 Created on Fri Feb 13 10:14:19 2026
 
-@author: Wesley Mills 
+@author: Wesley Mills and ChatGPT 
 """
 
 import clr 
@@ -54,6 +54,7 @@ class LightField:
               '(2) The aquisition time units are ms \n' + 
               '(3) The image orientation is how you\'d like \n' + 
               '(4) The temperature is locked at -70 C \n' + 
+              '(5) You\'ve acquired & applied a background subtraction \n' + 
               '\n Press [Enter] when ready to proceed')
         self.did_first_acquire = False # see acquire_as_csv() below 
     
@@ -137,9 +138,9 @@ class LightField:
         
         # Convert the frame into a numpy array 
         recent_file = self.file_manager.GetRecentlyAcquiredFileNames()[0]
-        print('Get Recently Acquired suceeded')
+        #print('Get Recently Acquired suceeded')
         image_set = self.file_manager.OpenFile(recent_file, FileAccess.ReadWrite)
-        print("Open File suceeded")
+        #print("Open File suceeded")
         frame = image_set.GetFrame(0, 0)
         data_1d = np.array(frame.GetData())
         data_2d = data_1d.reshape((frame.Height, frame.Width))
@@ -153,11 +154,11 @@ class LightField:
             print('Using an array of zeros instead.')
             wavelengths = np.zeros(1024) 
                 
-        # Get the directory to save in; default to current working directory 
+        # Get the directory to save in; default to Desktop\data\misc\ 
         if directory:
             csv_path = os.path.join(directory, filename + ".csv")
         else:
-            csv_path = os.path.join(os.getcwd(), filename + ".csv")
+            csv_path = os.path.join(r"C:\Users\schul\OneDrive\Desktop\data\misc", filename + ".csv")
         
         # Write the csv file line-by-line to ensure its a 2D matrix 
         with open(csv_path, 'w') as f:
