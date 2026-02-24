@@ -1,2 +1,2 @@
 # lab-automation
-Python automation of LightField, Kinesis, & Thorlabs Power Meters 
+Python class-based automation of LightField, Kinesis, & Thorlabs Power Meters 
