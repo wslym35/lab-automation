@@ -31,7 +31,7 @@ def setup(lf_params):
     mirror = PRMTZ8('27270898') 
     mirror.connect()
     
-    # Connect to the power meter (i don't know what the number is, but it works)
+    # Connect to the power meter 
     PM = PM100D('USB0::4883::32888::P0007396::0::INSTR') 
     
     # Home the rotation mounts 
@@ -69,4 +69,5 @@ lf, analyzer, hwp, mirror, PM = setup(lf_params)
 input("Now you can do your experiment")
 experiment() 
 finish() 
+
 
