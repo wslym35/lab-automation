@@ -53,6 +53,7 @@ def finish():
     # Call this function this when the experiment is done 
     hwp.disconnect()
     analyzer.disconnect() 
+    mirror.disconnect() 
     PM.disconnect() 
     lf.close()
 
@@ -69,5 +70,6 @@ lf, analyzer, hwp, mirror, PM = setup(lf_params)
 input("Now you can do your experiment")
 experiment() 
 finish() 
+
 
 
