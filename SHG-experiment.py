@@ -19,8 +19,13 @@ from PowerMeterControls import PM100D
 
 import numpy as np 
 from datetime import date 
+import os # For mkdir, path.join, etc. 
 
 def setup(lf_params):
+    
+    input('Make sure: \n(1) the hwp, analyzer, and mirror mount are disconnected in Kinesis \n' + 
+          '(2) there is no LightField window open \n' +
+          '(3) the power meter is on \n' + 'Then press [Enter]')
     # Launch an instance of lightfield 
     lf = LightField(lf_params) 
     
@@ -62,12 +67,13 @@ def pixel_deg_callibration(lf, analyzer, hwp, mirror, PM, N_points):
     
     lf.set_center_wavelength(0)
     lf.set_exposure_time(100) 
-    k_pos1_pix = int(input("Remove the slit, place the diffuser film and turn on the lamp. \nThen enter the pixel location of k = +1 (top)\n"))
+    k_pos1_pix = int(input("Remove the slit, place the diffuser film on an in-focus coverslip, and turn on the lamp. \n" + 
+                           "Bring the bfp into focus, then enter the pixel location of k = +1 (top)\n"))
     k_neg1_pix = int(input("Enter the pixel location of k = -1 (bottom)\n")) 
     pixels_per_2NA = round(NA * np.abs(k_neg1_pix - k_pos1_pix)) 
     lf.set_exposure_time(10) 
-    input("Remove the diffuser film, turn off the lamp, and turn on the laser. \n" +
-          "Then position the input momentum at k = 0 (and at pixel 512), then press [Enter]")
+    input("Remove the diffuser film, replace the coverslip with an in-focus sample, turn off the lamp, and turn on the laser. \n" +
+          "Position the input momentum at k = 0 (and at pixel 512), then press [Enter]")
     input("Position the slit, then press [Enter]") 
     lf.set_center_wavelength(1080)
     mirror_0 = mirror.get_position() 
@@ -105,6 +111,7 @@ def pixel_deg_callibration(lf, analyzer, hwp, mirror, PM, N_points):
     
     
     pixels_to_measure = np.round(np.linspace(k_0_pix - NA*(k_0_pix-k_pos1_pix), k_0_pix + NA*(k_neg1_pix-k_0_pix), N_points)).astype(int)    
+    reordered_pixels = reorder_with_spacing(pixels_to_measure, 0.040 * pixels_per_200mdeg/0.200)
     
     # Convert to degrees, then reorder 
     degrees_to_measure = 0.200/pixels_per_200mdeg * (k_0_pix - pixels_to_measure) + mirror_0 
@@ -117,9 +124,9 @@ def pixel_deg_callibration(lf, analyzer, hwp, mirror, PM, N_points):
     mirror.move_to(mirror_0) 
     
     # Return two ordered arrays of (1) degrees to take measurements at and (2) corresponding k values
-    return reordered_degrees, reordered_k_values 
+    return reordered_degrees, reordered_k_values, reordered_pixels 
 
-def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values):
+def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixels):
     # Ask for the zero value of the hwp, analyzer, and attenuator 
     hwp_zero = float(input("What degree setting on the hwp actuator corresponds to a vertical fast axis?\n"))
     analyzer_zero = float(input("What degree setting on the analyzer actuator corresponds to a vertical polarization axis?\n")) 
@@ -143,7 +150,13 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values):
     # This experiment measures the reflected intensity as a function of input momentum for s/s and p/p polarizations 
     pol = ['s/s', 'p/p'] 
     input("I need to fix the 'folder' line to be the correct path on the lab desktop")
-    folder = f'/data/Wes/{date.today()}/'
+    folder = rf"C:\Users\schul\OneDrive\Desktop\data\Wes\reflection-experiments\{date.today()}"
+    os.mkdir(folder) 
+    # Save degrees, k_values, and pixels for later reference 
+    np.save(os.path.join(folder, 'degrees'), degrees)
+    np.save(os.path.join(folder, 'k_values'), k_values)
+    np.save(os.path.join(folder, 'pixels'), pixels) 
+    
     # Set the polarization optics 
     for p in pol:
         # Set hwp 
@@ -168,7 +181,7 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values):
             filename = f"{np.round(PM.read_power()*1e3):.0f}mW-{p[0]}pol-ky={'-' if k_values[i] <0 else '+'}{(k_values[i]):.2f}_{sample}_{p[-1]}pol-{(lf.get_exposure_time()):.0f}ms"
             filename.replace('.', ',') # Because .csv files can't have '.' in the name
             lf.acquire_as_csv(filename, folder)
-            
+
 
 lf_params = {'experiment_name' : 'LEDs', # This is the only required parameter to initial a LightField experiment 
              # These are all optional 
@@ -178,10 +191,11 @@ lf_params = {'experiment_name' : 'LEDs', # This is the only required parameter t
              }  
 
 
-lf, analyzer, hwp, mirror, PM = setup(lf_params) 
-input("Now you can do your experiment")
-N_points = 10 # Number of points to move the mirror to and measure 
-degrees, k_values = pixel_deg_callibration(lf, analyzer, hwp, mirror, PM, N_points) 
-reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values) 
-finish(lf, analyzer, hwp, mirror, PM) 
+#lf, analyzer, hwp, mirror, PM = setup(lf_params) 
+#input("Now you can do your experiment")
+#N_points = 10 # Number of points to move the mirror to and measure 
+#degrees, k_values, pixels = pixel_deg_callibration(lf, analyzer, hwp, mirror, PM, N_points) 
+#reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixels) 
+    
+#finish(lf, analyzer, hwp, mirror, PM) 
 
