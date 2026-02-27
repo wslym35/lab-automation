@@ -124,6 +124,11 @@ class LightField:
               "Maybe one day this will be automated...\n" + 
               "Press [Enter] when ready to proceed.")
     
+    # Take "one look"
+    def one_look(self):
+        self.experiment.Acquire() 
+        time.sleep(self.get_exposure_time()/1000 + 2.5) # Wait for the acquisition to finish 
+    
     # Acquire and save image as csv 
     def acquire_as_csv(self, filename, directory=None):
         
