@@ -25,7 +25,7 @@ def setup(lf_params):
     
     input('Make sure: \n(1) the hwp, analyzer, and mirror mount are disconnected in Kinesis \n' + 
           '(2) there is no LightField window open \n' +
-          '(3) the power meter is on \n' + 'Then press [Enter]')
+          "(3) the power meter and mirror mount's KCube are on \n" + 'Then press [Enter]')
     # Launch an instance of lightfield 
     lf = LightField(lf_params) 
     
