@@ -76,7 +76,7 @@ class LightField:
     
     def set_exposure_time(self, time):
         if self.camera_found():  
-            self.set_value(CameraSettings.ShutterTimingExposureTime, time) 
+            self.set_value(CameraSettings.ShutterTimingExposureTime, float(time)) 
             print("The exposure time has been set to " + str(self.get_exposure_time()))
             
     def get_exposure_time(self):
@@ -85,7 +85,7 @@ class LightField:
     
     def set_center_wavelength(self, wavelength):
         if self.spectrometer_found(): 
-            self.set_value(SpectrometerSettings.GratingCenterWavelength, wavelength)
+            self.set_value(SpectrometerSettings.GratingCenterWavelength, float(wavelength))
             print("The center wavelength has been set to " + str(self.get_center_wavelength()))
             
     def get_center_wavelength(self):
