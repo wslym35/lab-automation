@@ -25,7 +25,7 @@ def setup(lf_params):
     
     input('Make sure: \n(1) the hwp, analyzer, and mirror mount are disconnected in Kinesis \n' + 
           '(2) there is no LightField window open \n' +
-          '(3) the power meter is on \n' + 'Then press [Enter]')
+          "(3) the power meter and mirror mount's KCube are on \n" + 'Then press [Enter]')
     # Launch an instance of lightfield 
     lf = LightField(lf_params) 
     
@@ -131,14 +131,16 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
     hwp_zero = float(input("What degree setting on the hwp actuator corresponds to a vertical fast axis?\n"))
     analyzer_zero = float(input("What degree setting on the analyzer actuator corresponds to a vertical polarization axis?\n")) 
     attenuator_zero = float(input("What degree setting on the attenuator mount corresponds to a vertical polarization axis?\n"))
-    attenuator_angle = float(input("What is the current degree setting of the attenuator? (I need to check that the order of subtraction is correct below)\n"))
+    attenuator_angle = float(input("What is the current degree setting of the attenuator?\n"))
     attenuator_offset = attenuator_angle - attenuator_zero 
+    # As long as this is positive, it works as expected in the for loop (2026-02-27)  
+    # its probably also correct if negative, I just haven't checked that 
     
     input("If you ran pixel_deg_callibration(), then the slit should be positioned and the incident momentum should be k=0. \n" + 
           "Check this, then press [Enter]") 
-    sample = input("What sample are you measuring reflection from? (no spaces)\n")
+    sample = input("What's the name of sample you're measuring reflection from? (no spaces)\n")
     lf.set_center_wavelength(1080) 
-    lf.set_exposure_time(10) 
+    lf.set_exposure_time(100) 
     
     lf.acquire_background() 
     # Two schools of thought: 
@@ -149,7 +151,6 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
 
     # This experiment measures the reflected intensity as a function of input momentum for s/s and p/p polarizations 
     pol = ['s/s', 'p/p'] 
-    input("I need to fix the 'folder' line to be the correct path on the lab desktop")
     folder = rf"C:\Users\schul\OneDrive\Desktop\data\Wes\reflection-experiments\{date.today()}"
     os.mkdir(folder) 
     # Save degrees, k_values, and pixels for later reference 
@@ -157,13 +158,14 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
     np.save(os.path.join(folder, 'k_values'), k_values)
     np.save(os.path.join(folder, 'pixels'), pixels) 
     
+    input("I assumed that positive mirror motion -> movement towards k=+1, but it actually means movements towards k=-1. Does this break anything? (naming, etc.)")
     # Set the polarization optics 
     for p in pol:
         # Set hwp 
         if p[0] == 'p':
             hwp.move_to(attenuator_offset / 2 + hwp_zero)
         elif p[0] == 's':
-            hwp.move_to((90 - attenuator_offset) / 2 + hwp_zero)
+            hwp.move_to(attenuator_offset + (90 - attenuator_offset)/2 + hwp_zero)
         else: 
             print("Something isn't right in the hwp orientation")
         
