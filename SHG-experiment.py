@@ -158,7 +158,7 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
     np.save(os.path.join(folder, 'k_values'), k_values)
     np.save(os.path.join(folder, 'pixels'), pixels) 
     
-    input("I assumed that positive mirror motion -> movement towards k=+1, but it actually means movements towards k=-1. Does this break anything?")
+    input("I assumed that positive mirror motion -> movement towards k=+1, but it actually means movements towards k=-1. Does this break anything? (naming, etc.)")
     # Set the polarization optics 
     for p in pol:
         # Set hwp 
