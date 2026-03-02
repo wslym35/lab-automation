@@ -83,10 +83,19 @@ class K10CR2:
         print("Home complete.")
 
     def move_to(self, angle_deg, timeout=60000):
-        self._ensure_connected()
-        print(f"Moving to {angle_deg} degrees...")
-        self.device.MoveTo(Decimal(angle_deg), timeout)
-        print("Move complete.")
+        if (angle_deg >= 0) & (angle_deg <= 360):
+            self._ensure_connected()
+            print(f"Moving to {angle_deg} degrees...")
+            self.device.MoveTo(Decimal(angle_deg), timeout)
+            print("Move complete.")
+        elif (angle_deg < 0) & (angle_deg >= -360):
+            self._ensure_connected()
+            print(f"Moving to {angle_deg} degrees...")
+            angle_deg += 360 
+            self.device.MoveTo(Decimal(angle_deg), timeout)
+            print("Move complete.")
+        else: 
+            print("Please enter an angle value betwen -360 and +360, inclusive.")
 
     def move_relative(self, delta_deg, timeout=60000):
         self._ensure_connected()
@@ -189,10 +198,19 @@ class PRMTZ8:
         print("Home complete") 
 
     def move_to(self, angle_deg, timeout=60000):
-        self._ensure_connected()
-        print(f"Moving to {angle_deg} degrees...")
-        self.device.MoveTo(Decimal(angle_deg), timeout)
-        print("Move complete.") 
+        if (angle_deg >= 0) & (angle_deg <= 360):
+            self._ensure_connected()
+            print(f"Moving to {angle_deg} degrees...")
+            self.device.MoveTo(Decimal(angle_deg), timeout)
+            print("Move complete.")
+        elif (angle_deg < 0) & (angle_deg >= -360):
+            self._ensure_connected()
+            print(f"Moving to {angle_deg} degrees...")
+            angle_deg += 360 
+            self.device.MoveTo(Decimal(angle_deg), timeout)
+            print("Move complete.")
+        else: 
+            print("Please enter an angle value betwen -360 and +360, inclusive.")
 
     def move_relative(self, delta_deg, timeout=60000):
         self._ensure_connected()
