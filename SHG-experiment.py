@@ -10,7 +10,7 @@ Created on Wed Feb 25 09:29:55 2026
 # The following imports allow you to use the lab controls in any Python script 
 import sys 
 
-sys.path.append(r"C:\Users\schul\OneDrive\Desktop\code\lab-automation")
+sys.path.append(r"C:\Users\schul\code\lab-automation")
 
 from LightFieldControls import LightField 
 from KinesisControls import (K10CR2, PRMTZ8) 
@@ -65,12 +65,23 @@ def pixel_deg_callibration(lf, analyzer, hwp, mirror, PM, N_points):
     # N = the length of the returned array, i.e., the number of k0 points to measure at 
     NA = 1.3 
     
+    # Ask for the zero value of the hwp, analyzer, and attenuator 
+    hwp_zero = float(input("What degree setting on the hwp actuator corresponds to a vertical fast axis?\n"))
+    analyzer_zero = float(input("What degree setting on the analyzer actuator corresponds to a vertical polarization axis?\n")) 
+    attenuator_zero = float(input("What degree setting on the attenuator mount corresponds to a vertical polarization axis?\n"))
+    attenuator_angle = float(input("What is the current degree setting of the attenuator?\n"))
+    attenuator_offset = attenuator_angle - attenuator_zero 
+    
+    # Set polarization optics to s/s
+    hwp.move_to(attenuator_offset + (90 - attenuator_offset)/2 + hwp_zero)
+    analyzer.move_to(analyzer_zero + 90) 
+    
     lf.set_center_wavelength(0)
-    lf.set_exposure_time(100) 
+    lf.set_exposure_time(10) 
     input("Focus the microscope on the top surface of a coverslip. Remove the slit and turn on the laser. \n" +
           "Position the input momentum at k = 0 (then at pixel 512), then press [Enter]")
     
-    lf.set_exposure_time(10) 
+    lf.set_exposure_time(100) 
     k_pos1_pix = int(input("Shut the laser, place the diffuser film and turn on the lamp. \n" + 
                            "Bring the bfp into focus, then enter the pixel location of k = +1 (top)\n"))
     k_neg1_pix = int(input("Enter the pixel location of k = -1 (bottom)\n")) 
@@ -82,6 +93,7 @@ def pixel_deg_callibration(lf, analyzer, hwp, mirror, PM, N_points):
     input("Remove the diffuser film and turn off the lamp.\n" + 
           "Replace the coverslip with an in-focus sample and position the slit. Then open the laser and press [Enter].")          
     lf.set_center_wavelength(params['pump wavelength'])
+    lf.set_exposure_time(100) 
     mirror_0 = mirror.get_position() 
     k_0_pix = int(input('Please enter the pixel location of the incident momentum. (Use "One Look" in the GUI) \n')) 
     
@@ -140,6 +152,7 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
     attenuator_zero = float(input("What degree setting on the attenuator mount corresponds to a vertical polarization axis?\n"))
     attenuator_angle = float(input("What is the current degree setting of the attenuator?\n"))
     attenuator_offset = attenuator_angle - attenuator_zero 
+    
     # As long as this is positive, it works as expected in the for loop (2026-02-27)  
     # its probably also correct if negative, I just haven't checked that 
     
@@ -160,12 +173,26 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
 
     # This experiment measures the reflected intensity as a function of input momentum for s/s and p/p polarizations 
     pol = ['s/s', 'p/p'] 
-    folder = rf"C:\Users\schul\OneDrive\Desktop\data\Wes\reflection-experiments\{date.today()}"
-    os.mkdir(folder) 
+    folder = rf"C:\Users\schul\data\Wes\reflection-experiments\{date.today()}"
+    
+    def make_unique_dir(base_path):
+        if not os.path.exists(base_path):
+            os.makedirs(base_path)
+            return base_path
+    
+        counter = 1
+        while True:
+            new_path = f"{base_path}({counter})"
+            if not os.path.exists(new_path):
+                os.makedirs(new_path)
+                return new_path
+            counter += 1
+    
+    directory = make_unique_dir(folder) 
     # Save degrees, k_values, and pixels for later reference 
-    np.save(os.path.join(folder, 'degrees'), degrees)
-    np.save(os.path.join(folder, 'k_values'), k_values)
-    np.save(os.path.join(folder, 'pixels'), pixels) 
+    np.save(os.path.join(directory, 'degrees'), degrees)
+    np.save(os.path.join(directory, 'k_values'), k_values)
+    np.save(os.path.join(directory, 'pixels'), pixels) 
     
     # Set the polarization optics 
     for p in pol:
@@ -190,7 +217,7 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
             mirror.move_to(degrees[i]) 
             filename = f"{np.round(PM.read_power()*1e6):.0f}uW-{p[0]}pol-ky={'-' if k_values[i] <0 else '+'}{np.abs(k_values[i]):.2f}_{sample}_{p[-1]}pol-{(lf.get_exposure_time()):.0f}ms"
             filename.replace('.', ',') # Because .csv files can't have '.' in the name
-            lf.acquire_as_csv(filename, folder)
+            lf.acquire_as_csv(filename, directory)
         
         mirror.move_to(mirror_0)
 
