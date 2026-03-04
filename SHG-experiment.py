@@ -20,6 +20,7 @@ from PowerMeterControls import PM100D
 import numpy as np 
 from datetime import date 
 import os # For mkdir, path.join, etc. 
+from pathlib import Path 
 
 def setup(lf_params):
     
@@ -146,16 +147,7 @@ def pixel_deg_callibration(lf, analyzer, hwp, mirror, PM, N_points):
     return reordered_degrees, reordered_k_values, reordered_pixels 
 
 def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixels):
-    # Ask for the zero value of the hwp, analyzer, and attenuator 
-    hwp_zero = float(input("What degree setting on the hwp actuator corresponds to a vertical fast axis?\n"))
-    analyzer_zero = float(input("What degree setting on the analyzer actuator corresponds to a vertical polarization axis?\n")) 
-    attenuator_zero = float(input("What degree setting on the attenuator mount corresponds to a vertical polarization axis?\n"))
-    attenuator_angle = float(input("What is the current degree setting of the attenuator?\n"))
-    attenuator_offset = attenuator_angle - attenuator_zero 
-    
-    # As long as this is positive, it works as expected in the for loop (2026-02-27)  
-    # its probably also correct if negative, I just haven't checked that 
-    
+        
     input("If you ran pixel_deg_callibration(), then the slit should be positioned and the incident momentum should be k=0. \n" + 
           "Check this, then press [Enter]") 
     mirror_0 = mirror.get_position() 
@@ -195,8 +187,18 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
     np.save(os.path.join(directory, 'k_values'), k_values)
     np.save(os.path.join(directory, 'pixels'), pixels) 
     
+    # Ask for the zero value of the hwp, analyzer, and attenuator 
+    hwp_zero = float(input("What degree setting on the hwp actuator corresponds to a vertical fast axis?\n"))
+    analyzer_zero = float(input("What degree setting on the analyzer actuator corresponds to a vertical polarization axis?\n")) 
+    attenuator_zero = float(input("What degree setting on the attenuator mount corresponds to a vertical polarization axis?\n"))
+    
     # Set the polarization optics 
     for p in pol:
+        attenuator_angle = float(input(f"Doing a {p}-pol measurement now. What is the current degree setting of the attenuator?\n"))
+        attenuator_offset = attenuator_angle - attenuator_zero 
+        # As long as this is positive, it works as expected in the for loop (2026-02-27)  
+        # its probably also correct if negative, I just haven't checked that 
+        
         # Set hwp 
         if p[0] == 'p':
             hwp.move_to(attenuator_offset / 2 + hwp_zero)
@@ -220,7 +222,14 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
             filename.replace('.', ',') # Because .csv files can't have '.' in the name
             lf.acquire_as_csv(filename, directory)
         
-    mirror.move_to(mirror_0)
+        # After acquiring all the data you need, reset the mirror and clear the backup directory 
+        mirror.move_to(mirror_0)
+        for file in Path(r"C:\Users\schul\OneDrive\Documents\LightField").glob("*.spe"):
+            try:
+                file.unlink()
+                #print(f"Deleted: {file}")
+            except Exception as e:
+                print(f"Error deleting {file}: {e}")
 
 lf_params = {'experiment_name' : 'SHG', # This is the only required parameter to initial a LightField experiment 
              # These are all optional 
