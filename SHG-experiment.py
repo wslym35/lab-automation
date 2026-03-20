@@ -458,7 +458,9 @@ def main_menu():
     
         func = options.get(choice) 
         if func: 
-            func() 
+            result = func() 
+            if result: 
+                print(result) 
         else: 
             print("Invalid option") 
     return 
