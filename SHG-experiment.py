@@ -15,93 +15,204 @@ sys.path.append(r"C:\Users\schul\code\lab-automation")
 from LightFieldControls import LightField 
 from KinesisControls import (K10CR2, PRMTZ8) 
 from PowerMeterControls import PM100D 
+
+from Thorlabs.MotionControl.DeviceManagerCLI import DeviceNotReadyException # for error handling 
 ###############################################################################
 
 import numpy as np 
 from datetime import date 
 import os # For mkdir, path.join, etc. 
 from pathlib import Path 
+import inspect 
 
-
-def setup(lf_params):
+def setup():
     
     input('Make sure: \n(1) the hwp, analyzer, and mirror mount are disconnected in Kinesis \n' + 
           '(2) there is no LightField window open \n' +
-          "(3) the power meter and mirror mount's KCube are on \n" + 'Then press [Enter]')
+          "(3) the power meter and mirror mount's KCube are on \n" + 'Then press [Enter]')    
+    
+    # Serial numbers of the various cage rotation mounts 
+    rotation_serials = {'attenuator': '55537294', 
+                       'hwp' : '55535784',
+                       'analyzer' : '55536784'}
+    
     # Launch an instance of lightfield 
-    lf = LightField(lf_params) 
+    devices['lf'] = LightField(lf_params) 
+    devices['lf'].connect() 
+# =============================================================================
+#     try: devices['lf'].get_center_wavelength() 
+#     except: devices['lf'] = LightField(lf_params) 
+# =============================================================================
     
-    # Connect to the half-wave plate (number is serial number) 
-    hwp = K10CR2('55535784') 
-    hwp.connect() 
-    
-    # Connect to the analyzing polarizer (number is serial number) 
-    analyzer = K10CR2('55536784')
-    analyzer.connect() 
-    
+    # Connect to the attenuator 
+    devices['attenuator'] = K10CR2('attenuator', rotation_serials['attenuator'])
+    devices['attenuator'].connect() 
+        
+    # Connect to the half-wave plate 
+    devices['hwp'] = K10CR2('hwp', rotation_serials['hwp'])
+    devices['hwp'].connect() 
+        
+    # Connect to the analyzing polarizer 
+    devices['analyzer'] = K10CR2('analyzer', rotation_serials['analyzer'])
+    devices['analyzer'].connect()   
+        
     # Connect to the mirror rotation stage (number is KCube serial number) 
-    mirror = PRMTZ8('27270898') 
-    mirror.connect()
-    
+    devices['mirror'] = PRMTZ8('mirror', '27270898')
+    devices['mirror'].connect()  
+        
     # Connect to the power meter
-    PM = PM100D('USB0::4883::32888::P0007396::0::INSTR') 
+    devices['PM'] = PM100D('USB0::4883::32888::P0007396::0::INSTR') 
     
-    # Home the rotation mounts 
-    hwp.home() 
-    analyzer.home() 
-    mirror.home() 
-    
-    return lf, analyzer, hwp, mirror, PM 
+    return  
 
-def finish(lf, analyzer, hwp, mirror, PM): 
-    # Call this function when the experiment is done 
-    hwp.disconnect()
-    analyzer.disconnect() 
-    mirror.disconnect() 
-    PM.disconnect() 
-    lf.close()
+def check_devices():
+    # Calls a 'get' method on each device to check that they're connected 
+    try: 
+        devices['lf'].get_center_wavelength() 
+        devices['attenuator'].get_position() 
+        devices['analyzer'].get_position() 
+        devices['hwp'].get_position() 
+        devices['mirror'].get_position() 
+        devices['PM'].identify()
+        print("All devices are connected")
+        return True 
+    except Exception as e: 
+        print(f"check_devices() failed with error: {e}")
+        return False 
+
+def finish(): 
     
-def pixel_deg_calibration(lf, analyzer, hwp, mirror, PM, N_points):
+    # Check devices 
+    if not check_devices():
+        print("Aborting finish().")
+        return 
+    
+    # Call this function when the experiment is done to close everything 
+    devices['attenuator'].disconnect() 
+    devices['hwp'].disconnect()
+    devices['analyzer'].disconnect() 
+    devices['mirror'].disconnect() 
+    devices['PM'].disconnect() 
+    devices['lf'].close() 
+    
+    return 
+
+def set_power_and_pol(power, pol):
+    # Takes a desired power and polarization and sets the attenuator and hwp to achieve that (as closely as possible)
+    
+    # Power should be a string of the form "##.## mW", or "##.## %" (whitespace required) 
+    try: 
+        value, units = power.split() 
+        value = float(value) 
+    except Exception as e: 
+        print('Error parsing desired power. Should be a string of the form "##.## mW" or "##.## %" (whitespace required).')
+        print(f"Full error: {e}")
+        return 0
+    if not (units == 'mW' or units == '%'): 
+        print('Input power should be a string of the form "##.## mW" or "##.## %" (whitespace required). Aborting set_power_and_pol().')
+        return 0
+    
+    # pol should be 's' or 'p' (this can be expanded later)
+    if not (pol == 's' or pol == 'p'):
+        print('Input polarization should be "s" or "p". Aborting set_power_and_pol().')
+        return 0 
+    
+    # Check devices 
+    if not check_devices():
+        print("Aborting set_power_and_pol().")
+        return 
+    
+    # Set attenuator 
+    if units == 'mW':
+        print('I need to write this part still...')
+        devices['PM'] 
+    elif units == '%':
+        devices['attenuator'].move_to(np.rad2deg(np.arcsin(np.sqrt(value/100))) + devices['attenuator'].vertical)  
+    
+    # Set hwp 
+    attenuator_offset = devices['attenuator'].get_position() - devices['attenuator'].vertical 
+    if pol == 's':
+        devices['hwp'].move_to(attenuator_offset + (90 - attenuator_offset)/2 + devices['hwp'].vertical)
+    elif pol == 'p': 
+        devices['hwp'].move_to(attenuator_offset / 2 + devices['hwp'].vertical) 
+    
+    # Data for the following calculation comes from:
+        # https://www.thorlabs.com/uv-fused-silica-broadband-plate-beamsplitters-coating-700---1100-nm?pn=BSN11&tabName=Overview
+    # Note that s-(p-)pol in the beamsplitter reference frame is p-(s-)pol in the sample frame 
+    # Currently, we assume a pump wavelength of 1080 nm 
+    if params['pump wavelength'] != 1080: print('Warning: the power label output by set_power_and_pol() is currently only valid at 1080 nm')
+    power_to_microscope = devices['PM'].read_power()*.940/.039 if pol == 's' else devices['PM'].read_power()*.815/.178 
+    
+    return f"{np.abs(power_to_microscope)*1e3:.2f}mW-{pol}pol" 
+
+def pixel_deg_calibration(N_points:int):
+    
+    # Check devices 
+    if not check_devices():
+        print("Aborting finish().")
+        return 
+    
     # Callibrate the pixel/deg mapping 
     # Return an ordered array of degree values to move the mirror to 
     # N = the length of the returned array, i.e., the number of k0 points to measure at 
-    NA = 1.3 
+    NA = 1.3  
     
-    # Ask for the zero value of the hwp, analyzer, and attenuator 
-    attenuator_zero = float(input("What degree setting on the attenuator mount corresponds to a vertical polarization axis?\n"))
-    hwp_zero = float(input("What degree setting on the hwp actuator corresponds to a vertical fast axis?\n"))
-    analyzer_zero = float(input("What degree setting on the analyzer actuator corresponds to a vertical polarization axis?\n")) 
-    attenuator_angle = float(input("What is the current degree setting of the attenuator?\n"))
-    attenuator_offset = attenuator_angle - attenuator_zero 
+    try: 
+        N_points = int(N_points) 
+    except: 
+        print("The number of points should be an integer. Aborting pixel_deg_calibration().")
+        return 
     
-    # Set polarization optics to s/s
-    hwp.move_to(attenuator_offset + (90 - attenuator_offset)/2 + hwp_zero)
-    analyzer.move_to(analyzer_zero + 90) 
+    # Set polarization optics to s/s and mirror to 0
+    set_power_and_pol('0 %', 's')
+    devices['attenuator'].move_to(devices['attenuator'].vertical) 
+    devices['mirror'].move_to(0) 
     
-    lf.set_center_wavelength(0)
-    lf.set_exposure_time(10) 
+    devices['lf'].set_center_wavelength(0)
+    devices['lf'].set_exposure_time(10) 
     print("Make sure you've checked the bfp focus.")
     input("Focus the microscope on the top surface of your sample. Remove the slit and turn on the laser. \n" +
           "Position the input momentum at k = 0 (then at pixel 512), then press [Enter]")
     
-    lf.set_exposure_time(100) 
-    k_pos1_pix = int(input("Shut the laser, place the diffuser film and turn on the lamp. \n" + 
-                           "Bring the bfp into focus, then enter the pixel location of k = +1 (top)\n"))
-    k_neg1_pix = int(input("Enter the pixel location of k = -1 (bottom)\n")) 
+    devices['lf'].set_exposure_time(100) 
+    
+    while True: 
+        try: 
+            k_pos1_pix = int(input("Shut the laser, place the diffuser film and turn on the lamp. \n" + 
+                                   "Bring the bfp into focus, then enter the pixel location of k = +1 (top)\n> "))
+            break
+        except: 
+            print("Invalid input. Try again.")
+    while True: 
+        try: 
+            k_neg1_pix = int(input("Enter the pixel location of k = -1 (bottom)\n> ")) 
+            break
+        except: 
+            print("Invalid input. Try again.")
+            
     pixels_per_2NA = round(NA * np.abs(k_neg1_pix - k_pos1_pix)) 
-    PM.set_wavelength(params['pump wavelength']) 
-    PM.zero() 
+    devices['PM'].set_wavelength(params['pump wavelength']) 
+    devices['PM'].zero() 
     
     
     input("Remove the diffuser film and turn off the lamp.\n" + 
           "Replace the coverslip with an in-focus sample and position the slit. Then open the laser and press [Enter].")          
-    lf.set_center_wavelength(params['pump wavelength'])
-    lf.set_exposure_time(100) 
-    mirror_0 = mirror.get_position() 
-    k_0_pix = int(input('Please enter the pixel location of the incident momentum. (Use "One Look" in the GUI) \n')) 
-    
-    mirror.move_relative(0.200) # I hope this isn't too much; lower the value if it is 
-    k_200mdeg_pix = int(input('Please enter the new pixel location of the incident momentum. (Use "One Look" in the GUI) \n')) 
+    devices['lf'].set_center_wavelength(params['pump wavelength'])
+    devices['lf'].set_exposure_time(100) 
+    #mirror_0 = devices['mirror'].get_position() 
+    while True: 
+        try: 
+            k_0_pix = int(input('Please enter the pixel location of the incident momentum. (Use "One Look" in the GUI) \n> ')) 
+            break
+        except: 
+            print("Invalid input. Try again.")
+    devices['mirror'].move_relative(0.200) # I hope this isn't too much; lower the value if it is 
+    while True: 
+        try: 
+            k_200mdeg_pix = int(input('Please enter the new pixel location of the incident momentum. (Use "One Look" in the GUI) \n> ')) 
+            break
+        except: 
+            print("Invalid input. Try again.")
     pixels_per_200mdeg = np.abs(k_0_pix - k_200mdeg_pix) 
     
     # Because the minimum repeatable increment is 0.04 deg (which is ~0.1k0), its best to 
@@ -109,7 +220,6 @@ def pixel_deg_calibration(lf, analyzer, hwp, mirror, PM, N_points):
     # (2) figure out how to order those pixels so that you never move by smaller than 0.04 deg
     # (3) convert the array of pixels to an array of degrees 
     # (4) return an ordered 2d array of degrees and k0 values for looping over and naming datafiles 
-    
     def reorder_with_spacing(arr, min_spacing):
         # Function for resorting the array of pixels to 
         arr = np.sort(arr)
@@ -135,46 +245,69 @@ def pixel_deg_calibration(lf, analyzer, hwp, mirror, PM, N_points):
     reordered_pixels = reorder_with_spacing(pixels_to_measure, 0.040 * pixels_per_200mdeg/0.200)
     
     # Convert to degrees, then reorder 
-    degrees_to_measure = 0.200/pixels_per_200mdeg * (k_0_pix - pixels_to_measure) + mirror_0 
+    degrees_to_measure = 0.200/pixels_per_200mdeg * (k_0_pix - pixels_to_measure)  
     reordered_degrees = reorder_with_spacing(degrees_to_measure, 0.040)#[::-1] 
     
     # Make an array of corresponding k values 
-    reordered_k_values = (reordered_degrees[::-1] - mirror_0) * pixels_per_200mdeg / 0.200 / pixels_per_2NA * 2*NA
+    reordered_k_values = (reordered_degrees[::-1]) * pixels_per_200mdeg / 0.200 / pixels_per_2NA * 2*NA
     
     # Move back to original position before ending the expeirment 
-    mirror.move_to(mirror_0) 
+    devices['mirror'].move_to(0) 
     
-    # Return two ordered arrays of (1) degrees to take measurements at and (2) corresponding k values
-    return reordered_degrees, reordered_k_values, reordered_pixels 
+    # Set global arrays of (1) degrees to take measurements at, (2) corresponding k values, and (3) corresponding pixels on the CCD
+    global degrees, k_values, pixels 
+    degrees = reordered_degrees
+    k_values = reordered_k_values
+    pixels = reordered_pixels
+    return 
 
-def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixels):
+###############################################################################
+# Reflection experiment (pump reflection)
+def reflection_experiment(power, pol_in, pol_out):
+    """
+    Measures reflected pump intensity across k-space for s/s and p/p polarizations.
+    """
+    # Check devices 
+    if not check_devices():
+        print("Aborting finish().")
+        return 
+    
+    # Vet pol_out (power and pol_in are verified in set_power_and_pol())
+    if not (pol_out == 's' or pol_out == 'p'):
+        print('Output polarization should be "s" or "p". Aborting reflection_experiment().')
+        return 
+    
+    global degrees, k_values, pixels 
+    if len(degrees) == 0:
+        print("You need to run pixel/k/degree calibration first. Aborting reflection_experiment().")
+        return 
+    
+    while True: 
+        sample = input("What's the name of the sample you're measuring reflection from? (no spaces)\n> ")
+        if " " not in sample: 
+            break
+        else: 
+            print("Please don't use any whitespace. Use '-' or '_' instead. Try again.") 
         
-    input("If you ran pixel_deg_callibration(), then the slit should be positioned and the incident momentum should be k=0. \n" + 
-          "Check this, then press [Enter]") 
-    mirror_0 = mirror.get_position() 
+    devices['lf'].set_center_wavelength(params['pump wavelength']) 
+    devices['lf'].set_exposure_time(10) 
     
-    sample = input("What's the name of sample you're measuring reflection from? (no spaces)\n")
-    lf.set_center_wavelength(params['pump wavelength']) 
-    lf.set_exposure_time(10) 
+    while True: 
+        result = input("Have you already set the exposure time you want? (y or n) \n> ")
+        if result == 'y': 
+            break 
+        if result == 'n': 
+            print("Aborting reflection_experiment() so you can set the exposure time you want")
+            return 
     
-    input("Set the exposure time you want, then press [Enter].")
-    lf.acquire_background() 
+    devices['lf'].acquire_background() 
     
-    # Two schools of thought: 
-        # Move the mirror on the outside loop because the polarization optics are doing larger movements, 
-            # and thus should be less sensitive to small errors over many repititions 
-        # Change the polarization on the outside loop because it will make the measurement faster 
-            # (waiting for one small mirror movements is faster than waiting for two large polarization movements) 
-
-    # This experiment measures the reflected intensity as a function of input momentum for s/s and p/p polarizations 
-    pol = ['s/s', 'p/p'] 
     folder = rf"C:\Users\schul\data\Wes\reflection-experiments\{date.today()}"
     
     def make_unique_dir(base_path):
         if not os.path.exists(base_path):
             os.makedirs(base_path)
             return base_path
-    
         counter = 1
         while True:
             new_path = f"{base_path}({counter})"
@@ -189,89 +322,72 @@ def reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixe
     np.save(os.path.join(directory, 'k_values'), k_values)
     np.save(os.path.join(directory, 'pixels'), pixels) 
     
-    # Ask for the zero value of the hwp, analyzer, and attenuator 
-    attenuator_zero = float(input("What degree setting on the attenuator mount corresponds to a vertical polarization axis?\n"))
-    hwp_zero = float(input("What degree setting on the hwp actuator corresponds to a vertical fast axis?\n"))
-    analyzer_zero = float(input("What degree setting on the analyzer actuator corresponds to a vertical polarization axis?\n")) 
-    
-    
     # Set the polarization optics 
-    for p in pol:
-
-        attenuator_angle = float(input(f"Doing a {p}-pol measurement now; make sure the laser is on. What is the current degree setting of the attenuator?\n"))
-        attenuator_offset = attenuator_angle - attenuator_zero 
-        # As long as this is positive, it works as expected in the for loop (2026-02-27)  
-        # its probably also correct if negative, I just haven't checked that 
-        
-        # Set hwp 
-        if p[0] == 'p':
-            hwp.move_to(attenuator_offset / 2 + hwp_zero)
-        elif p[0] == 's':
-            hwp.move_to(attenuator_offset + (90 - attenuator_offset)/2 + hwp_zero)
-        else: 
-            print("Something isn't right in the hwp orientation")
-        
-        # Set analyzer 
-        if p[-1] == 'p':
-            analyzer.move_to(analyzer_zero) 
-        elif p[-1] == 's': 
-            analyzer.move_to(analyzer_zero + 90) 
-        else: 
-            print("Something isn't right in the analyzer orientation")
-            
-        
-        
-        
-        for i in range(len(degrees)): 
-           # Move the mirror and save image as csv 
-           mirror.move_to(degrees[i]) 
-           filename = f"{params['pump wavelength']}nm-{np.round(PM.read_power()*1e6):.0f}uW-{p[0]}pol-ky={'-' if k_values[i] <0 else '+'}{np.abs(k_values[i]):.2f}_{sample}_{p[-1]}pol-{(lf.get_exposure_time()):.0f}ms"
-           filename.replace('.', ',') # Because .csv files can't have '.' in the name
-           lf.acquire_as_csv(filename, directory)
-        
-        mirror.move_to(mirror_0) 
+    power_pol = set_power_and_pol(power, pol_in)
+    if pol_out == 's': 
+        devices['analyzer'].move_to(devices['analyzer'].vertical + 90) 
+    elif pol_out == 'p': 
+        devices['analyzer'].move_to(devices['analyzer'].vertical) 
+    # The case where pol_out is neither 's' nor 'p' is handled earlier in this function 
     
+    for i in range(len(degrees)): 
+       # Move the mirror and save image as csv 
+       devices['mirror'].move_to(degrees[i]) 
+       filename = f"{params['pump wavelength']}nm-{power_pol}-ky={'-' if k_values[i] <0 else '+'}{np.abs(k_values[i]):.2f}_{sample}_{pol_out}pol-{(devices['lf'].get_exposure_time()):.0f}ms"
+       filename = filename.replace('.', ',') # Because .csv files can't have '.' in the name
+       devices['lf'].acquire_as_csv(filename, directory)
+    
+    devices['mirror'].move_to(0) 
+
     return 
-# =============================================================================
-#         # After acquiring all the data you need, reset the mirror and clear the backup directory 
-#         # Not needed any more because lf.acquire_as_csv() handles it 
-#         mirror.move_to(mirror_0)
-#         for file in Path(r"C:\Users\schul\OneDrive\Documents\LightField").glob("*.spe"):
-#             try:
-#                 file.unlink()
-#                 print(f"Deleted: {file}")
-#             except Exception as e:
-#                 print(f"Error deleting {file}: {e}")
-# =============================================================================
 
-def SHG_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixels):
-        
-    input("If you ran pixel_deg_callibration(), then the slit should be positioned and the incident momentum should be k=0. \n" + 
-          "Check this, then press [Enter]") 
-    mirror_0 = mirror.get_position() 
+###############################################################################
+# SHG experiment 
+def SHG_experiment(power, pol_in, pol_out):
+    """
+    Measures SHG response across k-space for s/p and p/p polarizations.
+    """
+    # Check devices 
+    if not check_devices():
+        print("Aborting finish().")
+        return 
     
-    sample = input("What's the name of sample you're measuring SHG from? (no spaces)\n")
-    lf.set_center_wavelength(params['pump wavelength']/2) 
-    lf.set_exposure_time(500) 
+    # Vet pol_out (power and pol_in are verified in set_power_and_pol())
+    if not (pol_out == 's' or pol_out == 'p'):
+        print('Output polarization should be "s" or "p". Aborting reflection_experiment().')
+        return
     
-    input("Set the exposure time you want, then press [Enter].")
-    lf.acquire_background() 
+    global degrees, k_values, pixels 
+    if len(degrees) == 0:
+        print("You need to run pixel/k/degree calibration first. Aborting reflection_experiment().")
+        return 
     
-    # Two schools of thought: 
-        # Move the mirror on the outside loop because the polarization optics are doing larger movements, 
-            # and thus should be less sensitive to small errors over many repititions 
-        # Change the polarization on the outside loop because it will make the measurement faster 
-            # (waiting for one small mirror movements is faster than waiting for two large polarization movements) 
-
-    # This experiment measures the SHG intensity as a function of input momentum for s/p and p/p polarizations 
-    pol = ['s/p', 'p/p'] 
+    while True: 
+        sample = input("What's the name of the sample you're measuring reflection from? (no spaces)\n> ")
+        if " " not in sample: 
+            break
+        else: 
+            print("Please don't use any whitespace. Use '-' or '_' instead. Try again.") 
+    
+    devices['lf'].set_center_wavelength(params['pump wavelength']//2) 
+    devices['lf'].set_exposure_time(500) 
+    
+    while True: 
+        result = input("Have you already set the exposure time you want? (y or n) \n> ")
+        if result == 'y': 
+            break 
+        if result == 'n': 
+            print("Aborting reflection_experiment() so you can set the exposure time you want")
+            return 
+    
+    devices['lf'].acquire_background() 
+    
     folder = rf"C:\Users\schul\data\Wes\GaN-SHG\{date.today()}"
     
     def make_unique_dir(base_path):
         if not os.path.exists(base_path):
             os.makedirs(base_path)
             return base_path
-    
         counter = 1
         while True:
             new_path = f"{base_path}({counter})"
@@ -286,48 +402,150 @@ def SHG_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixels):
     np.save(os.path.join(directory, 'k_values'), k_values)
     np.save(os.path.join(directory, 'pixels'), pixels) 
     
-    # Ask for the zero value of the hwp, analyzer, and attenuator 
-    attenuator_zero = float(input("What degree setting on the attenuator mount corresponds to a vertical polarization axis?\n"))
-    hwp_zero = float(input("What degree setting on the hwp actuator corresponds to a vertical fast axis?\n"))
-    analyzer_zero = float(input("What degree setting on the analyzer actuator corresponds to a vertical polarization axis?\n")) 
-    
-    
     # Set the polarization optics 
-    for p in pol:
+    power_pol = set_power_and_pol(power, pol_in)
+    if pol_out == 's': 
+        devices['analyzer'].move_to(devices['analyzer'].vertical + 90) 
+    elif pol_out == 'p': 
+        devices['analyzer'].move_to(devices['analyzer'].vertical) 
+    # The case where pol_out is neither 's' nor 'p' is handled earlier in this function
+    
+    for i in range(len(degrees)): 
+       # Move the mirror and save image as csv 
+       devices['mirror'].move_to(degrees[i]) 
+       filename = f"{params['pump wavelength']}nm-{power_pol}-ky={'-' if k_values[i] <0 else '+'}{np.abs(k_values[i]):.2f}_{sample}_{pol_out}pol-{(devices['lf'].get_exposure_time()):.0f}ms"
+       filename = filename.replace('.', ',') # Because .csv files can't have '.' in the name
+       devices['lf'].acquire_as_csv(filename, directory)
+        
+    devices['mirror'].move_to(0) 
+    
+    return 
 
-        attenuator_angle = float(input(f"Doing a {p}-pol measurement now; make sure the laser is on. What is the current degree setting of the attenuator?\n"))
-        attenuator_offset = attenuator_angle - attenuator_zero 
-        # As long as this is positive, it works as expected in the for loop (2026-02-27)  
-        # its probably also correct if negative, I just haven't checked that 
+###############################################################################
+# Now here's the menu functions 
+###############################################################################
+def main_menu():
+    options = {'1' : setup, 
+            '2' : check_devices, 
+            '3' : lambda : pixel_deg_calibration(input("Enter the number of points to measure across the bfp: \n> ")), 
+            '4' : lambda : set_power_and_pol(input("Enter power: \n> "), 
+                                             input("Enter polarization: \n> ")),
+            '5' : lambda : reflection_experiment(input("Enter the input power: \n> "), 
+                                                                     input("Enter the input polarization: \n> "), 
+                                                                     input("Enter the output polarization: \n> ")), 
+            '6' : lambda : SHG_experiment(input("Enter the input power: \n> "), 
+                                                        input("Enter the input polarization: \n> "), 
+                                                        input("Enter the output polarization: \n> ")), 
+            '7' : devices_menu, 
+            '8' : finish,
+            }
+    while True: 
+        print('\nMain menu:')
+        print("(1) setup \n" +
+              "(2) check devices \n" +
+              "(3) pixel/degree/k calibration \n" +
+              "(4) set power and polarization \n" + 
+              "(5) reflection experiment \n" +
+              "(6) SHG experiment \n" +
+              "(7) see individual devices \n" + 
+              "(8) close all devices \n" + 
+              "(q) exit program"
+              )
+        choice = input("> ")
         
-        # Set hwp 
-        if p[0] == 'p':
-            hwp.move_to(attenuator_offset / 2 + hwp_zero)
-        elif p[0] == 's':
-            hwp.move_to(attenuator_offset + (90 - attenuator_offset)/2 + hwp_zero)
+        if choice == "q":
+            break
+    
+        func = options.get(choice) 
+        if func: 
+            func() 
         else: 
-            print("Something isn't right in the hwp orientation")
+            print("Invalid option") 
+    return 
+
+def devices_menu():
+    options = {} 
+    
+    while True: 
+        print('\nDevices menu:')
+        device_count = 1
+        for key in devices: 
+            print(f'({str(device_count)}) {key}') 
+            options[str(device_count)] = devices[key] 
+            device_count += 1 
+        print('(q) Back to main menu')
         
-        # Set analyzer 
-        if p[-1] == 'p':
-            analyzer.move_to(analyzer_zero) 
-        elif p[-1] == 's': 
-            analyzer.move_to(analyzer_zero + 90) 
-        else: 
-            print("Something isn't right in the analyzer orientation")
+        choice = input('> ') 
+        
+        if choice == 'q':
+            break 
+        
+        device_choice = options.get(choice) 
+        
+        if device_choice: 
+            # Enter a sub-menu to call various methods of the chosen device 
+            methods_menu(device_choice) 
+        else:
+            print('invalid option')
+
+def methods_menu(device_choice):
+    options = {} 
+    
+    def convert_with_retry(raw, annotation):
+        while True:
+            try:
+                if annotation == int:
+                    return int(raw)
+                elif annotation == float:
+                    return float(raw)
+                elif annotation == bool:
+                    if raw.lower() in ("true", "1", "yes", "y"):
+                        return True
+                    elif raw.lower() in ("false", "0", "no", "n"):
+                        return False
+                    else:
+                        raise ValueError("Invalid boolean")
+                else:
+                    return raw  # string or no type
+            except ValueError:
+                print("Invalid input. Please try again.")
+    
+    while True: 
+        print(f'\n{device_choice.name} methods menu:')
+        method_count = 1
+        for method_name in dir(device_choice): 
+            method = getattr(device_choice, method_name)
+            if (callable(method) and not method_name.startswith('_')):
+                print(f'({method_count}) {method_name}') 
+                options[str(method_count)] = method 
+                method_count += 1 
+        print('(q) Back to devices menu')
+        
+        choice = input('> ') 
+        
+        if choice == 'q':
+            break 
+        
+        method_choice = options.get(choice) 
+        
+        if method_choice: 
+            sig = inspect.signature(method_choice)
+            args = []
+            for name, param in sig.parameters.items():
+                if name == "self":
+                    continue
+                raw = input(f"Enter {name}: \n> ")
+                value = convert_with_retry(raw, param.annotation)
+                args.append(value)
             
-        
-        
-        
-        for i in range(len(degrees)): 
-           # Move the mirror and save image as csv 
-           mirror.move_to(degrees[i]) 
-           filename = f"{params['pump wavelength']}nm-{np.round(PM.read_power()*1e6):.0f}uW-{p[0]}pol-ky={'-' if k_values[i] <0 else '+'}{np.abs(k_values[i]):.2f}_{sample}_{p[-1]}pol-{(lf.get_exposure_time()):.0f}ms"
-           filename.replace('.', ',') # Because .csv files can't have '.' in the name
-           lf.acquire_as_csv(filename, directory)
-        
-        mirror.move_to(mirror_0) 
+            result = method_choice(*args)
+            if result:
+                print(result) 
+                
 
+        else: 
+            print("invalid option")
+        
     return 
 
 lf_params = {'experiment_name' : 'SHG', # This is the only required parameter to initial a LightField experiment 
@@ -336,21 +554,21 @@ lf_params = {'experiment_name' : 'SHG', # This is the only required parameter to
              #'center_wavelength': 540.0, 
              #'grating': '[500nm,300][0][0]'
              }  
-
 params = {"pump wavelength" : 1080, # (nm) 
           "power beamsplitter s-pol R,T" : [0, 0], # Use these to normalize the pump power label 
           "power beamsplitter p-pol R,T" : [0, 0]
           }
 
+if not ('devices' in globals() or 'devices' in locals()):
+    devices = {'lf' : None,
+               'attenuator' : None,
+               'hwp' : None, 
+               'analyzer' : None, 
+               'mirror' : None,
+               'PM' : None
+               }
 
-lf, analyzer, hwp, mirror, PM = setup(lf_params) 
-N_points = int(input("How many points do you want to measure across k-space?\n")) # Number of points to move the mirror to and measure 
-input("Starting pixel_deg_callibration() next")
-degrees, k_values, pixels = pixel_deg_calibration(lf, analyzer, hwp, mirror, PM, N_points) 
-input("Starting reflection_experiment() next")
-reflection_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixels) 
-input("Starting SHG_experiment() next")
-SHG_experiment(lf, analyzer, hwp, mirror, PM, degrees, k_values, pixels)
-input("Starting finish() next")
-finish(lf, analyzer, hwp, mirror, PM) 
+degrees = []
+k_values = []
+pixels = [] 
 

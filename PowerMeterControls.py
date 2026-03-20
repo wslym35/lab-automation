@@ -21,14 +21,19 @@ class PM100D:
         :param resource_name: VISA resource string (if None, auto-detect)
         :param timeout: communication timeout in ms
         """
-        self.rm = pyvisa.ResourceManager()
-        self.resource_name = resource_name or self._find_instrument()
-        self.instrument = self.rm.open_resource(self.resource_name)
-        self.instrument.timeout = timeout
-
+        try: 
+            self.rm = pyvisa.ResourceManager()
+            self.resource_name = resource_name or self._find_instrument()
+            self.instrument = self.rm.open_resource(self.resource_name)
+            self.instrument.timeout = timeout
+        except Exception as e: 
+            print(f"Failed to connect: {e}")
+            return 
+        
         # Use newline termination (PM100D standard)
         self.instrument.write_termination = '\n'
         self.instrument.read_termination = '\n'
+        self.name = "power meter"
 
     def _find_instrument(self):
         """Auto-detect connected PM100D device."""
@@ -54,7 +59,7 @@ class PM100D:
         """Reset instrument."""
         self.instrument.write("*RST")
 
-    def set_wavelength(self, wavelength_nm):
+    def set_wavelength(self, wavelength_nm:int):
         """Set measurement wavelength (nm)."""
         self.instrument.write(f"SENS:CORR:WAV {wavelength_nm}")
 
