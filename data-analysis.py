@@ -22,7 +22,7 @@ def ky_to_y(ky_value):
     return m_ky_to_y * ky_value + c_ky_to_y
 
 # --- parameters for ROI and folder ---
-DATA_FOLDER = "03-06 glass reflection"   # relative path
+DATA_FOLDER = r"C:\Users\schul\data\Wes\reflection-experiments\2026-03-02(1)"
 FILE_GLOB = os.path.join(DATA_FOLDER, "*ky=*_*ms.csv")  # matches e.g. ...ky=+0.10_...csv
 CENTER_X = 512
 
