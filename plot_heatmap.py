@@ -282,13 +282,15 @@ if use_log:
         interpolation='bicubic'
     )
 
-    cbar_label = "Average photon counts (log scale)"
+    cbar_label = "Counts (log scale)"
+    
+    data_name += '-logscale'
 
 else:
     im = plt.imshow(
         Z,
         origin='lower',
-        aspect='auto',
+        aspect=1,
         extent=[
             expected_ky_sorted.min(),
             expected_ky_sorted.max(),
@@ -301,19 +303,19 @@ else:
         interpolation='bicubic'
     )
 
-    cbar_label = "Average photon counts"
+    cbar_label = "Counts"
 
 # Labels and colorbar
-plt.xlabel("Expected ky")
-plt.ylabel("Reflected ky")
-plt.title("2D Map: Intensity vs Expected ky and Reflected ky")
+plt.xlabel("Input ky")
+plt.ylabel("Output ky")
+plt.title("Counts versus input and output momentum, " + data_name)
 
 cbar = plt.colorbar(im)
 cbar.set_label(cbar_label)
 
 plt.tight_layout()
 
-out_png = os.path.join(DATA_FOLDER, data_name + ".png") 
+out_png = os.path.join(os.getcwd(), data_name + ".png") 
 plt.savefig(out_png, dpi=300)
 plt.show()
 
