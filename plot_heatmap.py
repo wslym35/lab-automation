@@ -4,7 +4,7 @@ import glob
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
+#from scipy.ndimage import gaussian_filter
 from matplotlib.colors import LogNorm
 
 # ---------------------------
@@ -12,7 +12,7 @@ from matplotlib.colors import LogNorm
 # ---------------------------
 
 
-DATA_FOLDER = os.path.join(os.getcwd(), 'metasurface_SHG_pp') # r"C:\Users\schul\data\Wes\reflection-experiments\2026-04-02(2)"  # change to your folder path if needed
+DATA_FOLDER = os.path.join(os.getcwd(), '2026-04-06(2)') # r"C:\Users\schul\data\Wes\reflection-experiments\2026-04-02(2)"  # change to your folder path if needed
 
 FILE_GLOB = os.path.join(DATA_FOLDER, "*ky=*.csv")
 
@@ -41,7 +41,7 @@ def y_to_ky(y_value):
 
 while True:
     try:
-        avg_width = int(input("Enter averaging width around x = 512 (e.g. 5): ").strip())
+        avg_width = int(input("Enter averaging half-width around x = 512 (e.g. 15): ").strip())
         if avg_width <= 0:
             print("Averaging width must be a positive integer.\n")
             continue
