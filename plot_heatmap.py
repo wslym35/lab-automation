@@ -4,7 +4,7 @@ import glob
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
+#from scipy.ndimage import gaussian_filter
 from matplotlib.colors import LogNorm
 
 # ---------------------------
@@ -41,7 +41,7 @@ def y_to_ky(y_value):
 
 while True:
     try:
-        avg_width = int(input("Enter averaging width around x = 512 (e.g. 5): ").strip())
+        avg_width = int(input("Enter averaging half-width around x = 512 (e.g. 15): ").strip())
         if avg_width <= 0:
             print("Averaging width must be a positive integer.\n")
             continue
@@ -86,7 +86,18 @@ def load_counts_matrix(csv_file):
 
     return counts
 
-def select_x_window(n_cols, center=CENTER_X, width=avg_width):
+def find_x_center_from_counts(counts):
+    """
+    Find the x-center for one CSV file by summing each photon-count column
+    and choosing the column with the largest total.
+    """
+    if counts.ndim != 2 or counts.shape[1] == 0:
+        raise RuntimeError("Counts array is empty or not 2D.")
+
+    column_sums = np.nansum(counts, axis=0)
+    return int(np.nanargmax(column_sums))
+
+def select_x_window(n_cols, center, width=avg_width):
     """
     Select an x-window around the given center, clipped to valid bounds.
     """
@@ -119,7 +130,8 @@ def get_reflected_profile(csv_file):
     """
     For one CSV file:
     - load the counts matrix
-    - average over a small x-window around x = 512
+    - find the x-center from the column with the largest summed intensity
+    - average over a small x-window around that x-center
     - convert each y pixel to reflected ky using the calibration
     - keep only reflected ky in [-1.3, +1.3]
     - sort by reflected ky so the axis is in the correct order
@@ -128,9 +140,10 @@ def get_reflected_profile(csv_file):
     counts = load_counts_matrix(csv_file)
     n_rows, n_cols = counts.shape
 
-    x0, x1 = select_x_window(n_cols, CENTER_X, avg_width)
+    x_center = find_x_center_from_counts(counts)
+    x0, x1 = select_x_window(n_cols, x_center, avg_width)
 
-    # average over a small x-window around 512
+    # average over a small x-window around the file-specific x center
     vertical_profile = np.nanmean(counts[:, x0:x1 + 1], axis=1)
 
     # clean any possible NaNs
@@ -231,58 +244,72 @@ if positive.size == 0:
 vmin = max(np.percentile(positive, 2), 1e-6)
 vmax = np.percentile(positive, 99.7)
 
-masked_Z = np.ma.masked_less_equal(Z, 0)
-cmap = plt.cm.inferno.copy()
-cmap.set_bad("black")
-cmap.set_under("black")
+cmap = plt.cm.viridis_r.copy()
 
 # ---------------------------
 # Plot
 # ---------------------------
 
+# ---------------------------
+# Ask user for plotting scale
+# ---------------------------
+
+while True:
+    scale_choice = input("Do you want to plot in log scale? (y/n): ").strip().lower()
+    if scale_choice in ['y', 'n']:
+        break
+    print("Invalid input. Please enter 'y' or 'n'.")
+
+use_log = (scale_choice == 'y')
+
 plt.figure(figsize=(9, 6))
 
-# =============================================================================
-# im = plt.imshow(
-#     masked_Z,
-#     origin='lower',
-#     aspect='auto',
-#     extent=[
-#         expected_ky_sorted.min(),
-#         expected_ky_sorted.max(),
-#         reflected_ky_axis_common.min(),
-#         reflected_ky_axis_common.max()
-#     ],
-#     cmap=cmap,
-#     norm=LogNorm(vmin=vmin, vmax=vmax),
-#     interpolation='bicubic'
-# )
-# =============================================================================
+if use_log:
+    Z_plot = np.clip(Z, a_min=1e-9, a_max=None)
 
-im = plt.imshow(
-     Z,
-     origin='lower',
-     aspect='auto',
-     extent=[
-         expected_ky_sorted.min(),
-         expected_ky_sorted.max(),
-         reflected_ky_axis_common.min(),
-         reflected_ky_axis_common.max()
-     ],
-     cmap=cmap,
-     vmin=0,
-     vmax=Z.max(),
-     interpolation='bicubic'
-)
+    im = plt.imshow(
+        Z_plot,
+        origin='lower',
+        aspect='auto',
+        extent=[
+            expected_ky_sorted.min(),
+            expected_ky_sorted.max(),
+            reflected_ky_axis_common.min(),
+            reflected_ky_axis_common.max()
+        ],
+        cmap=cmap,
+        norm=LogNorm(vmin=Z_plot.min(), vmax=Z_plot.max()),
+        interpolation='bicubic'
+    )
 
+    cbar_label = "Average photon counts (log scale)"
 
-plt.xlabel("Pump ky")
-plt.ylabel("Output ky")
-plt.title("Intensity of pump vs output, " + data_name)
+else:
+    im = plt.imshow(
+        Z,
+        origin='lower',
+        aspect='auto',
+        extent=[
+            expected_ky_sorted.min(),
+            expected_ky_sorted.max(),
+            reflected_ky_axis_common.min(),
+            reflected_ky_axis_common.max()
+        ],
+        cmap=cmap,
+        vmin=0,
+        vmax=Z.max(),
+        interpolation='bicubic'
+    )
+
+    cbar_label = "Average photon counts"
+
+# Labels and colorbar
+plt.xlabel("Expected ky")
+plt.ylabel("Reflected ky")
+plt.title("2D Map: Intensity vs Expected ky and Reflected ky")
+
 cbar = plt.colorbar(im)
-#cbar.set_label("Average photon counts (log scale)")
-
-cbar.set_label("Counts") 
+cbar.set_label(cbar_label)
 
 plt.tight_layout()
 
