@@ -11,7 +11,7 @@ from matplotlib.colors import LogNorm
 # User settings
 # ---------------------------
 
-data_name = 'metasurface_pp_SHG'
+data_name = 'Larry-case5-900sp_pp_SHG'
 DATA_FOLDER = os.path.join(os.getcwd(), data_name) # Make sure cwd is date folder 
 
 FILE_GLOB = os.path.join(DATA_FOLDER, "*ky=*.csv")
@@ -41,7 +41,7 @@ def y_to_ky(y_value):
 
 while True:
     try:
-        avg_width = int(input("Enter averaging width (e.g. 15): ").strip())
+        avg_width = int(input("Enter averaging width (e.g. 15) \n> ").strip())
         if avg_width <= 0:
             print("Averaging width must be a positive integer.\n")
             continue
@@ -255,16 +255,16 @@ cmap = plt.cm.viridis_r.copy()
 # ---------------------------
 
 while True:
-    scale_choice = input("Do you want to plot in log scale? (y/n): ").strip().lower()
-    if scale_choice in ['y', 'n']:
+    plotstyle =input('Please enter a plot style ("log", "counts", or "column norm" \n> ')
+    if plotstyle in ['log', 'counts', 'column norm']:
         break
     print("Invalid input. Please enter 'y' or 'n'.")
 
-use_log = (scale_choice == 'y')
+#use_log = (scale_choice == 'y')
 
 plt.figure(figsize=(9, 6))
 
-if use_log:
+if plotstyle == 'log':
     Z_plot = np.clip(Z, a_min=1e-9, a_max=None)
 
     im = plt.imshow(
@@ -279,14 +279,14 @@ if use_log:
         ],
         cmap=cmap,
         norm=LogNorm(vmin=Z_plot.min(), vmax=Z_plot.max()),
-        interpolation='bicubic'
+        #interpolation='bicubic'
     )
 
     cbar_label = "Counts (log scale)"
-    
+    plt.title("Counts versus input and output momentum \n" + data_name + '\nlog scale')
     data_name += '-logscale'
 
-else:
+elif plotstyle == 'counts':
     im = plt.imshow(
         Z,
         origin='lower',
@@ -300,15 +300,37 @@ else:
         cmap=cmap,
         vmin=0,
         vmax=Z.max(),
-        interpolation='bicubic'
+        #interpolation='bicubic'
     )
 
     cbar_label = "Counts"
+    plt.title("Counts versus input and output momentum \n" + data_name)
+    
+elif plotstyle == 'column norm': 
+    im = plt.imshow(
+        Z/Z.max(axis=0),
+        origin='lower',
+        aspect=1,
+        extent=[
+            expected_ky_sorted.min(),
+            expected_ky_sorted.max(),
+            reflected_ky_axis_common.min(),
+            reflected_ky_axis_common.max()
+        ],
+        cmap=cmap,
+        vmin=0,
+        vmax=1, #Z.max(),
+        #interpolation='bicubic'
+    )
+
+    cbar_label = "Counts (column normalized)"
+    plt.title("Counts versus input and output momentum \n" + data_name + '\ncolumn norm')
+    data_name += '-columnnorm'
 
 # Labels and colorbar
 plt.xlabel("Input ky")
 plt.ylabel("Output ky")
-plt.title("Counts versus input and output momentum, " + data_name)
+#plt.title("Counts versus input and output momentum \n" + data_name)
 
 cbar = plt.colorbar(im)
 cbar.set_label(cbar_label)
