@@ -42,7 +42,7 @@ def y_to_ky(y_value):
 
 while True:
     try:
-        avg_width = 30 #int(input("Enter averaging width (e.g. 30): ").strip())
+        avg_width = int(input("Enter averaging width (e.g. 30): ").strip())
         if avg_width <= 0:
             print("Averaging width must be a positive integer.\n")
             continue
@@ -257,7 +257,7 @@ cmap = plt.cm.viridis_r.copy()
 # ---------------------------
  
 while True:
-    plotstyle = "column norm"#input('Please enter a plot style ("log", "counts", or "column norm" \n> ')
+    plotstyle = input('Please enter a plot style ("log", "counts", or "column norm" \n> ')
     if plotstyle in ['log', 'counts', 'column norm']:
         break
     print("Invalid input. Please enter 'y' or 'n'.")
@@ -328,6 +328,11 @@ elif plotstyle == 'column norm':
     cbar_label = "Counts (column normalized)"
     plt.title("Counts versus input and output momentum \n" + data_name + '\ncolumn norm')
     data_name += '-columnnorm'
+    
+# =============================================================================
+# elif plotstyle == 'specular linecut': 
+#     im = plt.plot(np.linspace(expected_ky_sorted.min(), expected_ky_sorted.max(), 100), [Z[i,i] for i in range(100)])
+# =============================================================================
 
 # Labels and colorbar
 plt.xlabel("Input ky")
