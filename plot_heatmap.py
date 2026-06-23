@@ -284,6 +284,8 @@ for base_name, dir_list in groups.items():
         
         cmap = plt.cm.viridis_r.copy()
         
+        date = os.getcwd().split(os.sep)[-1] 
+        
         # ---------------------------
         # Plot
         # ---------------------------
@@ -309,8 +311,10 @@ for base_name, dir_list in groups.items():
             )
         
             cbar_label = "Counts (log scale)"
-            plt.title("Counts versus input and output momentum \n" + data_name + '\nlog scale')
+            plt.title("Counts versus input and output momentum \n" + data_name + ", " + date + '\nlog scale')
             plt.colorbar()
+            plt.xlabel("Input $k_{\parallel}/k_0$")
+            plt.ylabel("Output $k_{\parallel}/k_0$")
             data_name += '-logscale'
         
         elif plotstyle == 'counts':
@@ -331,8 +335,10 @@ for base_name, dir_list in groups.items():
             )
         
             cbar_label = "Counts"
-            plt.title("Counts versus input and output momentum \n" + data_name)
+            plt.title("Counts versus input and output momentum \n" + data_name + ", " + date)
             plt.colorbar() 
+            plt.xlabel("Input $k_{\parallel}/k_0$")
+            plt.ylabel("Output $k_{\parallel}/k_0$")
             
         elif plotstyle == 'column norm': 
             im = plt.imshow(
@@ -352,8 +358,10 @@ for base_name, dir_list in groups.items():
             )
         
             cbar_label = "Counts (column normalized)"
-            plt.title("Counts versus input and output momentum \n" + data_name + '\ncolumn norm')
+            plt.title("Counts versus input and output momentum \n" + data_name + ", " + date + '\ncolumn norm')
             plt.colorbar()
+            plt.xlabel("Input $k_{\parallel}/k_0$")
+            plt.ylabel("Output $k_{\parallel}/k_0$")
             data_name += '-columnnorm'
             
         if plotstyle == 'specular linecut':
@@ -369,15 +377,17 @@ for base_name, dir_list in groups.items():
             out_png = os.path.join(os.getcwd(), data_name + ".png")
             plt.savefig(out_png, dpi=300)
             plt.show()
+            np.savetxt(data_name + "_counts.csv", Z, delimiter=',')
+            
     
     # After inner loop: finalize the grouped specular plot if applicable
     if plotstyle == 'specular linecut' and specular_results:
-        plt.figure(figsize=(9, 6))
+        plt.figure(figsize=(6, 6))
         for polarization, (ky, counts) in specular_results.items():
             plt.plot(ky, counts, label=polarization)
         plt.xlabel("ky")
         plt.ylabel("Counts")
-        plt.title(f"Specular linecut\n{base_name}")
+        plt.title(f"Specular linecut\n{base_name}, " + date)
         plt.legend()
         plt.grid(True)
         plt.gca().set_box_aspect(1)
