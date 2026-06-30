@@ -72,9 +72,11 @@ def set_pump_wavelength():
     while True: 
         try: 
             params["pump wavelength"] = input("What is the pump wavelength? (in nm) \n***Note: you still need to change the laser manually*** \n>")
+            break 
         except ValueError(): 
             print("Only enter numbers please.")
-
+    print(f"Pump wavelength set to {params['pump wavelength']} nm (variable name, not laser setting)")
+        
 def check_devices():
     # Calls a 'get' method on each device to check that they're connected 
     try: 
