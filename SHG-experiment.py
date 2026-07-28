@@ -14,7 +14,8 @@ sys.path.append(r"C:\Users\schul\code\lab-automation")
 
 from LightFieldControls import LightField 
 from KinesisControls import (K10CR2, PRMTZ8) 
-from PowerMeterControls import PM100D 
+from PowerMeterControls import PM100D
+from LaserControls import ChameleonLaser
 
 from Thorlabs.MotionControl.DeviceManagerCLI import DeviceNotReadyException # for error handling 
 ###############################################################################
@@ -61,21 +62,27 @@ def setup():
     devices['mirror'].connect()  
         
     # Connect to the power meter
-    devices['PM'] = PM100D('USB0::4883::32888::P0007396::0::INSTR') 
-    
-    # Ask for pump wavelength 
-    set_pump_wavelength() 
+    devices['PM'] = PM100D('USB0::4883::32888::P0007396::0::INSTR')
+
+    # Connect to the tunable pump laser
+    devices['laser'] = ChameleonLaser('laser')
+    devices['laser'].connect()
+
+    # Ask for pump wavelength
+    set_pump_wavelength()
     
     return  
 
 def set_pump_wavelength():
-    while True: 
-        try: 
-            params["pump wavelength"] = input("What is the pump wavelength? (in nm) \n***Note: you still need to change the laser manually*** \n>")
-            break 
-        except ValueError(): 
+    while True:
+        try:
+            wavelength = float(input("What is the pump wavelength? (in nm) \n>"))
+            break
+        except ValueError:
             print("Only enter numbers please.")
-    print(f"Pump wavelength set to {params['pump wavelength']} nm (file name, not laser setting or refractive index)")
+    devices['laser'].set_wavelength(wavelength)
+    params["pump wavelength"] = wavelength
+    print(f"Pump wavelength set to {params['pump wavelength']} nm and laser driven to match.")
         
 def check_devices():
     # Calls a 'get' method on each device to check that they're connected 
@@ -84,8 +91,9 @@ def check_devices():
         devices['attenuator'].get_position() 
         devices['analyzer'].get_position() 
         devices['hwp'].get_position() 
-        devices['mirror'].get_position() 
+        devices['mirror'].get_position()
         devices['PM'].identify()
+        devices['laser'].get_wavelength()
         print("All devices are connected")
         return True 
     except Exception as e: 
@@ -115,8 +123,9 @@ def finish():
             devices['hwp'].disconnect()
             devices['analyzer'].disconnect() 
             devices['mirror'].disconnect() 
-            devices['PM'].disconnect() 
-            devices['lf'].close() 
+            devices['PM'].disconnect()
+            devices['laser'].disconnect()
+            devices['lf'].close()
             return 
         if answer == 'n':
             print("Aborting finish()")
@@ -703,10 +712,11 @@ params = {"pump wavelength" : 1080, # (nm)
 if not ('devices' in globals() or 'devices' in locals()):
     devices = {'lf' : None,
                'attenuator' : None,
-               'hwp' : None, 
-               'analyzer' : None, 
+               'hwp' : None,
+               'analyzer' : None,
                'mirror' : None,
-               'PM' : None
+               'PM' : None,
+               'laser' : None
                }
 
 degrees = []
