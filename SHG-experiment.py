@@ -300,12 +300,14 @@ def pixel_deg_calibration(N_points:int):
     return 
 
 ###############################################################################
-# Reflection / SHG experiment (pump reflection or SHG response across E(k)-space)
+# Reflection / SHG / TPPL-k experiment (pump reflection, SHG, or TPPL-k response across E(k)-space)
 EXPERIMENT_TYPES = {
     'reflection': {'folder': 'automated-reflection', 'suffix': 'R',
                    'warning': "Have you removed the 650SP filter and placed the ND filter?"},
     'SHG':        {'folder': 'automated-SHG',        'suffix': 'SHG',
                    'warning': "Have you removed the ND filter and placed the 650SP filter?"},
+    'TPPL-k':     {'folder': 'automated-TPPL-k',     'suffix': 'TPPL-k',
+                   'warning': "Have you removed the 650SP filter and placed the ND filter?"},
 }
 
 def run_experiment(experiment_type, power, pol_in, pol_out, resume_from=0):
@@ -496,53 +498,81 @@ def switch_to_540():
 # Now here's the menu functions 
 ###############################################################################
 def main_menu():
-    options = {'1' : setup, 
-            '2' : check_devices, 
-            '3' : lambda : pixel_deg_calibration(input("Enter the number of points to measure across the bfp: \n> ")), 
-            '4' : lambda : set_power_and_pol(input("Enter power: \n> "), 
+    options = {'1' : setup,
+            '2' : check_devices,
+            '3' : lambda : pixel_deg_calibration(input("Enter the number of points to measure across the bfp: \n> ")),
+            '4' : lambda : set_power_and_pol(input("Enter power: \n> "),
                                              input("Enter polarization: \n> ")),
-            '5' : lambda : run_experiment('reflection',
-                                           input("Enter the input power: \n> "),
-                                           input("Enter the input polarization: \n> "),
-                                           input("Enter the output polarization: \n> "),
-                                           int(input("Resume from index (0 for full run): \n> ") or 0)),
-            '6' : lambda : run_experiment('SHG',
-                                           input("Enter the input power: \n> "),
-                                           input("Enter the input polarization: \n> "),
-                                           input("Enter the output polarization: \n> "),
-                                           int(input("Resume from index (0 for full run): \n> ") or 0)),
-            '7' : devices_menu, 
-            '8' : reconnect_lf,
-            '9' : set_pump_wavelength, 
-            '10' : finish,
+            '5' : experiments_menu,
+            '6' : devices_menu,
+            '7' : reconnect_lf,
+            '8' : set_pump_wavelength,
+            '9' : finish,
             }
-    while True: 
+    while True:
         print('\nMain menu:')
         print("(1) setup \n" +
               "(2) check devices \n" +
               "(3) pixel/degree/k calibration \n" +
-              "(4) set power and polarization \n" + 
-              "(5) reflection experiment \n" +
-              "(6) SHG experiment \n" +
-              "(7) see individual devices \n" + 
-              "(8) reconnect LightField (after crash) \n" +
-              "(9) set pump wavelength \n" +
-              "(10) close all devices \n" + 
+              "(4) set power and polarization \n" +
+              "(5) experiments \n" +
+              "(6) see individual devices \n" +
+              "(7) reconnect LightField (after crash) \n" +
+              "(8) set pump wavelength \n" +
+              "(9) close all devices \n" +
               "(q) exit program"
               )
         choice = input("> ")
-        
+
         if choice == "q":
             break
-    
-        func = options.get(choice) 
-        if func: 
-            result = func() 
-            if result: 
-                print(result) 
-        else: 
-            print("Invalid option") 
-    return 
+
+        func = options.get(choice)
+        if func:
+            result = func()
+            if result:
+                print(result)
+        else:
+            print("Invalid option")
+    return
+
+def experiments_menu():
+    options = {'1' : lambda : run_experiment('reflection',
+                                              input("Enter the input power: \n> "),
+                                              input("Enter the input polarization: \n> "),
+                                              input("Enter the output polarization: \n> "),
+                                              int(input("Resume from index (0 for full run): \n> ") or 0)),
+               '2' : lambda : run_experiment('SHG',
+                                              input("Enter the input power: \n> "),
+                                              input("Enter the input polarization: \n> "),
+                                              input("Enter the output polarization: \n> "),
+                                              int(input("Resume from index (0 for full run): \n> ") or 0)),
+               '3' : lambda : run_experiment('TPPL-k',
+                                              input("Enter the input power: \n> "),
+                                              input("Enter the input polarization: \n> "),
+                                              input("Enter the output polarization: \n> "),
+                                              int(input("Resume from index (0 for full run): \n> ") or 0)),
+               }
+    while True:
+        print('\nExperiments menu:')
+        print("(1) reflection experiment \n" +
+              "(2) SHG experiment \n" +
+              "(3) TPPL-k experiment \n" +
+              "(q) Back to main menu"
+              )
+        choice = input('> ')
+
+        if choice == 'q':
+            break
+
+        func = options.get(choice)
+        if func:
+            result = func()
+            if result:
+                print(result)
+        else:
+            print("Invalid option")
+    return
 
 def devices_menu():
     options = {} 
