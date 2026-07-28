@@ -300,172 +300,169 @@ def pixel_deg_calibration(N_points:int):
     return 
 
 ###############################################################################
-# Reflection experiment (pump reflection)
-def reflection_experiment(power, pol_in, pol_out, resume_from=0):
+# Reflection / SHG / TPPL-k / TPPL-lambda experiments
+def make_unique_dir(base_path):
+    if not os.path.exists(base_path):
+        os.makedirs(base_path)
+        return base_path
+    counter = 1
+    while True:
+        new_path = f"{base_path}({counter})"
+        if not os.path.exists(new_path):
+            os.makedirs(new_path)
+            return new_path
+        counter += 1
+
+EXPERIMENT_TYPES = {
+    'reflection':   {'folder': 'automated-reflection',   'suffix': 'R',
+                     'warning': "Have you removed the 650SP filter and placed the ND filter?"},
+    'SHG':          {'folder': 'automated-SHG',          'suffix': 'SHG',
+                     'warning': "Have you removed the ND filter and placed the 650SP filter?"},
+    'TPPL-k':       {'folder': 'automated-TPPL-k',       'suffix': 'TPPL-k',
+                     'warning': "Have you removed the 650SP filter and placed the ND filter?"},
+    'TPPL-lambda':  {'folder': 'automated-TPPL-lambda',  'suffix': 'TPPL-lambda',
+                     'warning': "Have you aligned the laser and set the mirror where you want it?"},
+}
+
+def _prepare_experiment(experiment_type, config, power, pol_in, pol_out, require_calibration):
     """
-    Measures reflected pump intensity across E(k)-space.
-    resume_from: index into degrees[] to start from (use after a crash to skip 
-                 already-acquired points). Defaults to 0 (full run).
+    Shared setup for all experiment types: filter-check warning, device check,
+    pol_out validation, optional pixel/k calibration check, sample name prompt,
+    slit/exposure confirmation, background acquisition, output directory, and
+    polarization optics. Returns (sample, directory, power_pol), or None if the
+    run should be aborted.
     """
-    # Check devices 
+    # Confirm the correct filter is in place before proceeding
+    input(f"{config['warning']} Press [Enter] to continue.")
+
+    # Check devices
     if not check_devices():
-        print("Not all devices connected. Aborting reflection_experiment().")
-        return 
-    
+        print("Not all devices connected. Aborting run.")
+        return None
+
     # Vet pol_out (power and pol_in are verified in set_power_and_pol())
     if not (pol_out == 's' or pol_out == 'p'):
-        print('Output polarization should be "s" or "p". Aborting reflection_experiment().')
-        return 
-    
-    global degrees, k_values, pixels 
-    if len(degrees) == 0:
-        print("You need to run pixel/k/degree calibration first. Aborting reflection_experiment().")
-        return 
-    
-    while True: 
-        sample = input("What's the name of the sample you're measuring reflection from? (no spaces)\n> ")
-        if " " not in sample: 
-            break
-        else: 
-            print("Please don't use any whitespace. Use '-' or '_' instead. Try again.") 
-        
-    #devices['lf'].set_center_wavelength(params['pump wavelength']) 
-    input("Make sure the slit & center wavelength are set as you want them. Then press [Enter] to continue.")
-    #devices['lf'].set_exposure_time(10) 
-    
-    while True: 
-        result = input("Have you already set the exposure time you want? (y or n) \n> ")
-        if result == 'y': 
-            break 
-        if result == 'n': 
-            print("Aborting reflection_experiment() so you can set the exposure time you want")
-            return 
-    
-    devices['lf'].acquire_background() 
-    
-    date_folder = rf"C:\Users\schul\data\Wes\automated-reflection\{date.today()}"
-    
-    def make_unique_dir(base_path):
-        if not os.path.exists(base_path):
-            os.makedirs(base_path)
-            return base_path
-        counter = 1
-        while True:
-            new_path = f"{base_path}({counter})"
-            if not os.path.exists(new_path):
-                os.makedirs(new_path)
-                return new_path
-            counter += 1
-    
-    directory = make_unique_dir(os.path.join(date_folder, sample + '_' + pol_in + pol_out + '_' + 'R')) 
-    # Save degrees, k_values, and pixels for later reference 
-    np.save(os.path.join(directory, 'degrees'), degrees)
-    np.save(os.path.join(directory, 'k_values'), k_values)
-    np.save(os.path.join(directory, 'pixels'), pixels) 
-    
-    # Set the polarization optics 
-    power_pol = set_power_and_pol(power, pol_in)
-    if pol_out == 's': 
-        devices['analyzer'].move_to(devices['analyzer'].vertical + 90) 
-    elif pol_out == 'p': 
-        devices['analyzer'].move_to(devices['analyzer'].vertical) 
-    # The case where pol_out is neither 's' nor 'p' is handled earlier in this function 
-    
-    for i in range(resume_from, len(degrees)): 
-       # Move the mirror and save image as csv 
-       print(f"Acquiring point {i+1}/{len(degrees)} (index {i})")
-       devices['mirror'].move_to(degrees[i]) 
-       filename = f"{params['pump wavelength']}nm-{power_pol}-ky={'-' if k_values[i] <0 else '+'}{np.abs(k_values[i]):.2f}_{sample}_{pol_out}pol-{(devices['lf'].get_exposure_time()):.0f}ms"
-       filename = filename.replace('.', ',') # Because .csv files can't have '.' in the name
-       devices['lf'].acquire_as_csv(filename, directory)
-    
-    devices['mirror'].move_to(0) 
+        print('Output polarization should be "s" or "p". Aborting run.')
+        return None
 
-    return 
+    if require_calibration and len(degrees) == 0:
+        print("You need to run pixel/k/degree calibration first. Aborting run.")
+        return None
 
-###############################################################################
-# SHG experiment 
-def SHG_experiment(power, pol_in, pol_out, resume_from=0):
-    """
-    Measures SHG response across E(k)-space.
-    resume_from: index into degrees[] to start from (use after a crash to skip 
-                 already-acquired points). Defaults to 0 (full run).
-    """
-    # Check devices 
-    if not check_devices():
-        print("Not all devices connected. Aborting SHG_experiment().")
-        return 
-    
-    # Vet pol_out (power and pol_in are verified in set_power_and_pol())
-    if not (pol_out == 's' or pol_out == 'p'):
-        print('Output polarization should be "s" or "p". Aborting SHG_experiment().')
-        return
-    
-    global degrees, k_values, pixels 
-    if len(degrees) == 0:
-        print("You need to run pixel/k/degree calibration first. Aborting SHG_experiment().")
-        return 
-    
-    while True: 
-        sample = input("What's the name of the sample you're measuring reflection from? (no spaces)\n> ")
-        if " " not in sample: 
+    while True:
+        sample = input(f"What's the name of the sample you're measuring {experiment_type} from? (no spaces)\n> ")
+        if " " not in sample:
             break
-        else: 
-            print("Please don't use any whitespace. Use '-' or '_' instead. Try again.") 
-    
-    #devices['lf'].set_center_wavelength(params['pump wavelength']//2) 
+        else:
+            print("Please don't use any whitespace. Use '-' or '_' instead. Try again.")
+
     input("Make sure the slit & center wavelength are set as you want them. Then press [Enter] to continue.")
-    #devices['lf'].set_exposure_time(500) 
-    
-    while True: 
+
+    while True:
         result = input("Have you already set the exposure time you want? (y or n) \n> ")
-        if result == 'y': 
-            break 
-        if result == 'n': 
-            print("Aborting SHG_experiment() so you can set the exposure time you want")
-            return 
-    
-    devices['lf'].acquire_background() 
-    
-    date_folder = rf"C:\Users\schul\data\Wes\automated-SHG\{date.today()}"
-    
-    def make_unique_dir(base_path):
-        if not os.path.exists(base_path):
-            os.makedirs(base_path)
-            return base_path
-        counter = 1
-        while True:
-            new_path = f"{base_path}({counter})"
-            if not os.path.exists(new_path):
-                os.makedirs(new_path)
-                return new_path
-            counter += 1
-    
-    directory = make_unique_dir(os.path.join(date_folder, sample + '_' + pol_in + pol_out + '_' + 'SHG')) 
-    # Save degrees, k_values, and pixels for later reference 
-    np.save(os.path.join(directory, 'degrees'), degrees)
-    np.save(os.path.join(directory, 'k_values'), k_values)
-    np.save(os.path.join(directory, 'pixels'), pixels) 
-    
-    # Set the polarization optics 
+        if result == 'y':
+            break
+        if result == 'n':
+            print("Aborting so you can set the exposure time you want")
+            return None
+
+    devices['lf'].acquire_background()
+
+    date_folder = rf"C:\Users\schul\data\Wes\{config['folder']}\{date.today()}"
+    directory = make_unique_dir(os.path.join(date_folder, sample + '_' + pol_in + pol_out + '_' + config['suffix']))
+
+    # Set the polarization optics
     power_pol = set_power_and_pol(power, pol_in)
-    if pol_out == 's': 
-        devices['analyzer'].move_to(devices['analyzer'].vertical + 90) 
-    elif pol_out == 'p': 
-        devices['analyzer'].move_to(devices['analyzer'].vertical) 
+    if pol_out == 's':
+        devices['analyzer'].move_to(devices['analyzer'].vertical + 90)
+    elif pol_out == 'p':
+        devices['analyzer'].move_to(devices['analyzer'].vertical)
     # The case where pol_out is neither 's' nor 'p' is handled earlier in this function
-    
-    for i in range(resume_from, len(degrees)): 
-       # Move the mirror and save image as csv 
+
+    return sample, directory, power_pol
+
+def run_experiment(experiment_type, power, pol_in, pol_out, resume_from=0):
+    """
+    Measures reflected pump, SHG, or TPPL-k intensity across E(k)-space by
+    sweeping the mirror through calibrated positions.
+    experiment_type: 'reflection', 'SHG', or 'TPPL-k'
+    resume_from: index into degrees[] to start from (use after a crash to skip
+                 already-acquired points). Defaults to 0 (full run).
+    """
+    if experiment_type not in EXPERIMENT_TYPES:
+        print(f"experiment_type should be one of {list(EXPERIMENT_TYPES)}. Aborting run_experiment().")
+        return
+    config = EXPERIMENT_TYPES[experiment_type]
+
+    global degrees, k_values, pixels
+
+    setup = _prepare_experiment(experiment_type, config, power, pol_in, pol_out, require_calibration=True)
+    if setup is None:
+        return
+    sample, directory, power_pol = setup
+
+    # Save degrees, k_values, and pixels for later reference
+    np.save(os.path.join(directory, 'degrees'), degrees)
+    np.save(os.path.join(directory, 'k_values'), k_values)
+    np.save(os.path.join(directory, 'pixels'), pixels)
+
+    for i in range(resume_from, len(degrees)):
+       # Move the mirror and save image as csv
        print(f"Acquiring point {i+1}/{len(degrees)} (index {i})")
-       devices['mirror'].move_to(degrees[i]) 
+       devices['mirror'].move_to(degrees[i])
        filename = f"{params['pump wavelength']}nm-{power_pol}-ky={'-' if k_values[i] <0 else '+'}{np.abs(k_values[i]):.2f}_{sample}_{pol_out}pol-{(devices['lf'].get_exposure_time()):.0f}ms"
        filename = filename.replace('.', ',') # Because .csv files can't have '.' in the name
        devices['lf'].acquire_as_csv(filename, directory)
-        
-    devices['mirror'].move_to(0) 
-    
-    return 
+
+    devices['mirror'].move_to(0)
+
+    return
+
+def run_wavelength_experiment(power, pol_in, pol_out, wl_start, wl_stop, wl_step, resume_from=0):
+    """
+    Measures TPPL-lambda intensity while sweeping the pump laser wavelength, at
+    whatever mirror position is currently set (the mirror is never moved).
+    wl_start/wl_stop/wl_step: wavelength sweep range in nm; wl_stop is inclusive.
+    resume_from: index into the wavelength list to start from (use after a crash
+                 to skip already-acquired points). Defaults to 0 (full run).
+    """
+    experiment_type = 'TPPL-lambda'
+    config = EXPERIMENT_TYPES[experiment_type]
+
+    setup = _prepare_experiment(experiment_type, config, power, pol_in, pol_out, require_calibration=False)
+    if setup is None:
+        return
+    sample, directory, power_pol = setup
+
+    wavelengths = []
+    wl = wl_start
+    while (wl >= wl_stop if wl_step < 0 else wl <= wl_stop):
+        wavelengths.append(wl)
+        wl += wl_step
+
+    if not wavelengths:
+        print("No wavelengths in range. Check start/stop/step values. Aborting run_wavelength_experiment().")
+        return
+
+    # Save the swept wavelengths for later reference
+    np.save(os.path.join(directory, 'wavelengths'), wavelengths)
+
+    original_wavelength = params['pump wavelength']
+
+    for i in range(resume_from, len(wavelengths)):
+       wl = wavelengths[i]
+       print(f"Acquiring point {i+1}/{len(wavelengths)} (index {i}): {wl} nm")
+       devices['laser'].set_wavelength(wl)
+       params['pump wavelength'] = wl
+       filename = f"{params['pump wavelength']}nm-{power_pol}-wl={wl:.2f}_{sample}_{pol_out}pol-{(devices['lf'].get_exposure_time()):.0f}ms"
+       filename = filename.replace('.', ',') # Because .csv files can't have '.' in the name
+       devices['lf'].acquire_as_csv(filename, directory)
+
+    print(f"Restoring pump wavelength to {original_wavelength} nm...")
+    devices['laser'].set_wavelength(original_wavelength)
+    params['pump wavelength'] = original_wavelength
+
+    return
 
 # =============================================================================
 # ###############################################################################
@@ -566,51 +563,89 @@ def switch_to_540():
 # Now here's the menu functions 
 ###############################################################################
 def main_menu():
-    options = {'1' : setup, 
-            '2' : check_devices, 
-            '3' : lambda : pixel_deg_calibration(input("Enter the number of points to measure across the bfp: \n> ")), 
-            '4' : lambda : set_power_and_pol(input("Enter power: \n> "), 
+    options = {'1' : setup,
+            '2' : check_devices,
+            '3' : lambda : pixel_deg_calibration(input("Enter the number of points to measure across the bfp: \n> ")),
+            '4' : lambda : set_power_and_pol(input("Enter power: \n> "),
                                              input("Enter polarization: \n> ")),
-            '5' : lambda : reflection_experiment(input("Enter the input power: \n> "), 
-                                                                     input("Enter the input polarization: \n> "), 
-                                                                     input("Enter the output polarization: \n> "),
-                                                                     int(input("Resume from index (0 for full run): \n> ") or 0)), 
-            '6' : lambda : SHG_experiment(input("Enter the input power: \n> "), 
-                                                        input("Enter the input polarization: \n> "), 
-                                                        input("Enter the output polarization: \n> "),
-                                                        int(input("Resume from index (0 for full run): \n> ") or 0)), 
-            '7' : devices_menu, 
-            '8' : reconnect_lf,
-            '9' : set_pump_wavelength, 
-            '10' : finish,
+            '5' : experiments_menu,
+            '6' : devices_menu,
+            '7' : reconnect_lf,
+            '8' : set_pump_wavelength,
+            '9' : finish,
             }
-    while True: 
+    while True:
         print('\nMain menu:')
         print("(1) setup \n" +
               "(2) check devices \n" +
               "(3) pixel/degree/k calibration \n" +
-              "(4) set power and polarization \n" + 
-              "(5) reflection experiment \n" +
-              "(6) SHG experiment \n" +
-              "(7) see individual devices \n" + 
-              "(8) reconnect LightField (after crash) \n" +
-              "(9) set pump wavelength \n" +
-              "(10) close all devices \n" + 
+              "(4) set power and polarization \n" +
+              "(5) experiments \n" +
+              "(6) see individual devices \n" +
+              "(7) reconnect LightField (after crash) \n" +
+              "(8) set pump wavelength \n" +
+              "(9) close all devices \n" +
               "(q) exit program"
               )
         choice = input("> ")
-        
+
         if choice == "q":
             break
-    
-        func = options.get(choice) 
-        if func: 
-            result = func() 
-            if result: 
-                print(result) 
-        else: 
-            print("Invalid option") 
-    return 
+
+        func = options.get(choice)
+        if func:
+            result = func()
+            if result:
+                print(result)
+        else:
+            print("Invalid option")
+    return
+
+def experiments_menu():
+    options = {'1' : lambda : run_experiment('reflection',
+                                              input("Enter the input power: \n> "),
+                                              input("Enter the input polarization: \n> "),
+                                              input("Enter the output polarization: \n> "),
+                                              int(input("Resume from index (0 for full run): \n> ") or 0)),
+               '2' : lambda : run_experiment('SHG',
+                                              input("Enter the input power: \n> "),
+                                              input("Enter the input polarization: \n> "),
+                                              input("Enter the output polarization: \n> "),
+                                              int(input("Resume from index (0 for full run): \n> ") or 0)),
+               '3' : lambda : run_experiment('TPPL-k',
+                                              input("Enter the input power: \n> "),
+                                              input("Enter the input polarization: \n> "),
+                                              input("Enter the output polarization: \n> "),
+                                              int(input("Resume from index (0 for full run): \n> ") or 0)),
+               '4' : lambda : run_wavelength_experiment(input("Enter the input power: \n> "),
+                                                         input("Enter the input polarization: \n> "),
+                                                         input("Enter the output polarization: \n> "),
+                                                         float(input("Start wavelength (nm): \n> ")),
+                                                         float(input("Stop wavelength (nm, inclusive): \n> ")),
+                                                         float(input("Step size (nm, negative to sweep down): \n> ")),
+                                                         int(input("Resume from index (0 for full run): \n> ") or 0)),
+               }
+    while True:
+        print('\nExperiments menu:')
+        print("(1) reflection experiment \n" +
+              "(2) SHG experiment \n" +
+              "(3) TPPL-k experiment \n" +
+              "(4) TPPL-lambda experiment \n" +
+              "(q) Back to main menu"
+              )
+        choice = input('> ')
+
+        if choice == 'q':
+            break
+
+        func = options.get(choice)
+        if func:
+            result = func()
+            if result:
+                print(result)
+        else:
+            print("Invalid option")
+    return
 
 def devices_menu():
     options = {} 
