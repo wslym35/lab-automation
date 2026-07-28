@@ -6,7 +6,7 @@ and a Thorlabs power meter, driven together from a single interactive script.
 
 Each instrument is wrapped in its own class (`LightField`, `K10CR2`/`PRMTZ8`, `PM100D`), and
 `SHG-experiment.py` composes them into a menu-driven workflow for calibrating the rig and
-running reflection/SHG sweeps across E(k)-space.
+running reflection/SHG sweeps across k-space.
 
 ## Requirements
 
