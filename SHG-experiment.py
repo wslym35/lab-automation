@@ -20,11 +20,12 @@ from LaserControls import ChameleonLaser
 from Thorlabs.MotionControl.DeviceManagerCLI import DeviceNotReadyException # for error handling 
 ###############################################################################
 
-import numpy as np 
-from datetime import date 
-import os # For mkdir, path.join, etc. 
-from pathlib import Path 
-import inspect 
+import numpy as np
+from datetime import date
+import os # For mkdir, path.join, etc.
+from pathlib import Path
+import inspect
+import time
 
 def setup():
     
@@ -133,47 +134,123 @@ def finish():
 
     return 
 
+def _set_hwp_for_pol(pol):
+    # Set hwp to maintain the desired output polarization, given the attenuator's current position
+    attenuator_offset = devices['attenuator'].get_position() - devices['attenuator'].vertical
+    if pol == 's':
+        devices['hwp'].move_to((90 + attenuator_offset) / 2 + devices['hwp'].vertical)
+    elif pol == 'p':
+        devices['hwp'].move_to((00 + attenuator_offset) / 2 + devices['hwp'].vertical)
+    elif pol == '45':
+        devices['hwp'].move_to((45 + attenuator_offset) / 2 + devices['hwp'].vertical)
+
+def _converge_power(target_mw, pol, tolerance_mw=0.1, angle_min=None, angle_max=None,
+                     max_iter=50, settle_s=2.0):
+    """
+    Bisection search over the attenuator angle (hwp follows via _set_hwp_for_pol()
+    to preserve polarization) until the beamsplitter-corrected power estimate at
+    the microscope reaches target_mw, +/- tolerance_mw. angle_min/angle_max default
+    to the attenuator's full 0-100% Malus's-law range (vertical to vertical+90),
+    matching the '%' branch's own convention.
+    Returns (final_angle_deg, final_power_mw).
+    Raises ValueError if target_mw is outside the achievable range in
+    [angle_min, angle_max], or RuntimeError if it doesn't converge within max_iter.
+    """
+    if params['pump wavelength'] != 1080:
+        print('Warning: power convergence is currently only valid at 1080 nm')
+
+    ratio = .940/.039 if pol == 's' else .815/.178
+    target_w = target_mw * 1e-3
+    tol_w = tolerance_mw * 1e-3
+
+    if angle_min is None:
+        angle_min = devices['attenuator'].vertical
+    if angle_max is None:
+        angle_max = devices['attenuator'].vertical + 90
+
+    def measure_at(angle):
+        devices['attenuator'].move_to(angle)
+        _set_hwp_for_pol(pol)
+        time.sleep(settle_s)
+        return devices['PM'].read_power() * ratio
+
+    p_now = devices['PM'].read_power() * ratio
+    if abs(p_now - target_w) <= tol_w:
+        return devices['attenuator'].get_position(), p_now * 1e3
+
+    p_at_min = measure_at(angle_min)
+    if abs(p_at_min - target_w) <= tol_w:
+        return angle_min, p_at_min * 1e3
+
+    p_at_max = measure_at(angle_max)
+    if abs(p_at_max - target_w) <= tol_w:
+        return angle_max, p_at_max * 1e3
+
+    p_lo, p_hi = min(p_at_min, p_at_max), max(p_at_min, p_at_max)
+    if target_w < p_lo - tol_w or target_w > p_hi + tol_w:
+        raise ValueError(
+            f"Target {target_mw:.3f} mW is outside the achievable power range "
+            f"[{p_lo*1e3:.3f}, {p_hi*1e3:.3f}] mW for attenuator angles "
+            f"[{angle_min:.2f}, {angle_max:.2f}] deg."
+        )
+
+    a, b = (angle_min, angle_max) if p_at_min <= p_at_max else (angle_max, angle_min)
+
+    mid, p_mid = (a + b) / 2.0, None
+    for i in range(max_iter):
+        mid = (a + b) / 2.0
+        p_mid = measure_at(mid)
+        print(f"  iter {i+1}: attenuator = {mid:.4f} deg, power = {p_mid*1e3:.3f} mW (target {target_mw:.3f} mW)")
+        if abs(p_mid - target_w) <= tol_w:
+            return mid, p_mid * 1e3
+        if p_mid < target_w:
+            a = mid
+        else:
+            b = mid
+
+    raise RuntimeError(
+        f"Power convergence did not converge after {max_iter} iterations. "
+        f"Last attenuator angle: {mid:.4f} deg, last power: {p_mid*1e3:.3f} mW, target: {target_mw:.3f} mW."
+    )
+
 def set_power_and_pol(power, pol):
     # Takes a desired power and polarization and sets the attenuator and hwp to achieve that (as closely as possible)
-    
-    # Power should be a string of the form "##.## mW", or "##.## %" (whitespace required) 
-    try: 
-        value, units = power.split() 
-        value = float(value) 
-    except Exception as e: 
+
+    # Power should be a string of the form "##.## mW", or "##.## %" (whitespace required)
+    try:
+        value, units = power.split()
+        value = float(value)
+    except Exception as e:
         print('Error parsing desired power. Should be a string of the form "##.## mW" or "##.## %" (whitespace required, decimal optional).')
         print(f"Full error: {e}")
         return 0
-    if not (units == 'mW' or units == '%'): 
+    if not (units == 'mW' or units == '%'):
         print('Input power should be a string of the form "##.## mW" or "##.## %" (whitespace required). Aborting set_power_and_pol().')
         return 0
-    
+
     # pol should be 's', 'p', or '45' (this can be expanded later)
     if not (pol == 's' or pol == 'p' or pol=='45'):
         print('Input polarization should be "s", "p", or "45". Aborting set_power_and_pol().')
-        return 0 
-    
-    # Check devices 
+        return 0
+
+    # Check devices
     if not check_devices():
         print("Aborting set_power_and_pol().")
-        return 
-    
-    # Set attenuator 
+        return
+
+    # Set attenuator
     if units == 'mW':
-        print('I need to write this part still...')
-        devices['PM'] 
+        try:
+            _converge_power(value, pol)
+        except (ValueError, RuntimeError) as e:
+            print(f"Power convergence failed: {e}")
+            return 0
     elif units == '%':
-        devices['attenuator'].move_to(np.rad2deg(np.arcsin(np.sqrt(value/100))) + devices['attenuator'].vertical)  
-    
-    # Set hwp 
-    attenuator_offset = devices['attenuator'].get_position() - devices['attenuator'].vertical 
-    if pol == 's':
-        devices['hwp'].move_to((90 + attenuator_offset) / 2 + devices['hwp'].vertical)
-    elif pol == 'p': 
-        devices['hwp'].move_to((00 + attenuator_offset) / 2 + devices['hwp'].vertical) 
-    elif pol == '45':
-        devices['hwp'].move_to((45 + attenuator_offset) / 2 + devices['hwp'].vertical) 
-    
+        devices['attenuator'].move_to(np.rad2deg(np.arcsin(np.sqrt(value/100))) + devices['attenuator'].vertical)
+
+    # Set hwp
+    _set_hwp_for_pol(pol)
+
     # Data for the following calculation comes from:
         # https://www.thorlabs.com/uv-fused-silica-broadband-plate-beamsplitters-coating-700---1100-nm?pn=BSN11&tabName=Overview
     # Note that s-(p-)pol in the beamsplitter reference frame is p-(s-)pol in the sample frame 
