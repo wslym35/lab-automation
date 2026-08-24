@@ -240,6 +240,10 @@ def set_power_and_pol(power, pol):
         return
 
     # Set attenuator
+    # Note: bisection convergence here only needs to get "close enough" (tolerance_mw).
+    # It's probably not worth investing further effort tightening mW precision here --
+    # every acquired filename already records the actual measured power at that point,
+    # so any exact-power normalization needed later can be done in post-processing.
     if units == 'mW':
         try:
             _converge_power(value, pol)
